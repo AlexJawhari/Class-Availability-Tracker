@@ -1,0 +1,25 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.env
+env/
+venv/
+.venv/
+
+
+# VSCode settings
+.vscode/
+
+# Virtual env and config
+venv/
+.env
+
+# Playwright / local data / debug artifacts 
+data/storage_state.json
+data/state.json
+debug_page.html
+debug_screenshot.png
+captcha_before.png
+captcha_after.png
+data/
+scripts/
