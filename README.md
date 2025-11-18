@@ -8,3 +8,6 @@ The Program works through a discord bot that can be added to a user's server. Th
 
 
 Link to add the discord bot to your server/DM's: https://discord.com/oauth2/authorize?client_id=1426453681146171464
+
+
+Instructions Coming Soon!
