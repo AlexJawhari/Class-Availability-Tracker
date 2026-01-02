@@ -3,3 +3,5 @@ python-dotenv
 requests
 supabase
 playwright
+beautifulsoup4
+lxml
