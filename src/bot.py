@@ -3,6 +3,7 @@
 import os
 import json
 from dotenv import load_dotenv
+from datetime import datetime
 import discord
 from discord.ext import commands
 
@@ -25,9 +26,75 @@ from src.database import Database
 # Instantiate DB
 db = Database()
 
+# --- BACKGROUND TASK: CHECKER ---
+# This allows the bot process to also handle the 15-minute checks
+from discord.ext import tasks
+
+# We need to import the logic from runner, but runner.py is currently designed as a script.
+# We will duplicate the core logic or refactor runner.py to export a 'check_all' function.
+# For simplicity and clean code, we'll import the core functions from runner if possible,
+# or better yet, we'll implement a clean check loop here that re-uses the components.
+from src import runner, parser
+from src.checker_playwright import fetch_results_html
+
+@tasks.loop(minutes=15)
+async def check_availability_loop():
+    print(f"[{datetime.now()}] Starting scheduled availability check...")
+    try:
+        # Load state
+        subs = db.get_subscriptions()
+        notified = db.get_notified_state()
+        labels = list(subs.keys())
+        bot_token = os.getenv("DISCORD_BOT_TOKEN")
+
+        if not labels:
+            print("No subscriptions to check.")
+            return
+
+        for label in labels:
+            try:
+                # Note: This is a blocking call (Playwright sync). In a high-scale async bot 
+                # you'd want to run this in an executor, but for <100 classes 
+                # and 15 min interval, it's acceptable for the MVP.
+                print(f"Checking label: {label}")
+                html = fetch_results_html(label, headless=True)
+                rows = parser.parse_results_fragment(html)
+                
+                info = None
+                for r in rows:
+                    if r.get("label") == label:
+                        info = r
+                        break
+                
+                if info is None:
+                    print(f"No match for {label}")
+                    continue
+
+                should = runner.should_notify(label, info, notified)
+                if should:
+                    print(f"Notifying for {label}")
+                    # Use runner's notifier which uses requests (sync)
+                    # or better, since we are in the bot, we can use the bot to DM!
+                    # But to keep logic consistent with runner.py, let's just reuse the
+                    # existing notification helper or do it async way.
+                    runner.notify_users(label, subs[label], info, bot_token)
+                    db.update_notified_state(label, info)
+                
+            except Exception as inner_e:
+                print(f"Error checking {label}: {inner_e}")
+                
+    except Exception as e:
+        print(f"Error in availability loop: {e}")
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    
+    # Start the loop if not already running
+    if not check_availability_loop.is_running():
+        check_availability_loop.start()
+        print("Started 15-minute availability check loop.")
+
     # Optionally sync commands:
     if GUILD_ID:
         # Sync only to a specific guild
