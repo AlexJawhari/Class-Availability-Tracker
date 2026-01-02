@@ -24,52 +24,50 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
     
     # with statement allows for broswer to run and then close in one block
     with sync_playwright() as p:
+        # Launch with a real user agent to avoid detection/rendering issues
         browser = p.chromium.launch(headless=headless)
-        page = browser.new_page()
+        # Create a context with user agent
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        page = context.new_page()
 
         page.set_viewport_size({"width": 1280, "height": 800})
 
         # debug logs from the page (lambda is basically mini function)
         page.on("console", lambda msg: print("PAGE LOG:", msg.text))
-        page.on("pageerror", lambda err: print("PAGE ERROR:", err))
-
-        page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
+        # page.on("pageerror", lambda err: print("PAGE ERROR:", err)) # Reduce noise
 
         try:
-            page.wait_for_selector(SEARCH_SELECTOR, timeout=5000)
-        except PWTimeout:
-            print(f"Search input {SEARCH_SELECTOR} not found")
-            browser.close()
-            return ""
-
-        # use a page click and type in the class into the search box,
-        # then in the try and except we use
-        # the "click" first uses a backend css selector to directly 
-        # tell the html to submit,
-        # if that doesn't work, then we just provide an enter key
-        page.click(SEARCH_SELECTOR)
-        page.keyboard.type(subject_number, delay=100)
-        try:
-            page.click("button[type='submit']", timeout=3000)
-        except Exception:
+            page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
+            
+            # Wait for search box
+            page.wait_for_selector(SEARCH_SELECTOR, state="visible", timeout=10000)
+            
+            # Click and type
+            page.click(SEARCH_SELECTOR)
+            page.keyboard.type(subject_number, delay=100)
+            
+            # Press enter (more reliable than clicking generic buttons sometimes)
             page.keyboard.press("Enter")
+            
+            # Wait for results
+            # The site might be slow, so we give it a moment
+            page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=timeout_ms)
+            
+            # Add a small buffer for JS to settle
+            page.wait_for_timeout(2000)
 
-        # uses playwright feature to return the global variable resultRow
-        # unless the timeout time is reached, specifically, the code is 
-        # waiting for the matching variable to appear in the website data
-        # if it is, then we move to the except block
-        try:
-            page.wait_for_selector(RESULT_ROW_SELECTOR, timeout=timeout_ms)
-        except PWTimeout:
-            print("No results found; saving debug screenshot and html.")
-            page.screenshot(path="debug_screenshot.png")
-            open("debug_page.html", "w", encoding="utf-8").write(page.content())
+            html = page.content()
+            browser.close()
+            return html
+            
+        except Exception as e:
+            print(f"Scrape error for {subject_number}: {e}")
+            try:
+                page.screenshot(path="debug_error.png")
+            except:
+                pass
             browser.close()
             return ""
-
-        html = page.content()
-        browser.close()
-        return html
 
 
 def main(argv):
@@ -97,10 +95,8 @@ def main(argv):
 
     match = None
     for info in rows:
-        # print summary line for debugging, but also prints 
-        # out all the info for the class and updates match to be set
-        # to the info obtained
-        print(info.get("label"), "-", info.get("status_text"), "-", (f"{info.get('enrolled')}/{info.get('capacity')}" if info.get('enrolled') is not None else ("avail:"+str(info.get('seats_available')) if info.get('seats_available') is not None else "")))
+        # print summary line for debugging
+        print(info.get("label"), "-", info.get("status_text"))
         if info.get("label") and info["label"].startswith(target_label):
             match = info
             break
@@ -114,32 +110,9 @@ def main(argv):
     print("\nMATCH:", match)
     open_bool = parser.is_section_open(match)
     print("Open status:", open_bool)
-
-    label = match.get("label") or "unknown"
-
-    if open_bool:
-        print(">>> OPEN SPOT FOUND!")
-        try:
-            # Ask notifier whether we should notify (avoids duplicate spam)
-            if notifier.should_notify(label, True):
-                sent = notifier.notify_open(match)
-                if sent:
-                    notifier.mark_notified(label, True)
-                    print("Notification sent.")
-                else:
-                    print("Notification failed (POST returned error).")
-            else:
-                print("Already notified recently; skipping notification.")
-        except Exception as e:
-            # Defensive: don't crash the checker if notifier has an issue
-            print("Notifier error:", repr(e))
-    else:
-        # record closed state so that a future open will notify
-        try:
-            notifier.mark_notified(label, False)
-        except Exception as e:
-            print("Notifier mark-notified error:", repr(e))
-        print("No open spot found (considered closed/full).")
+    
+    # Note: Notification logic is handled by runner.py / bot.py now.
+    # This script is primarily for testing the scraper logic.
 
 
 
