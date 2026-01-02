@@ -12,27 +12,10 @@ from . import parser
 from .checker_playwright import fetch_results_html
 
 
-# Path to subscription file (same as bot used)
-SUBS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "subscriptions.json")
-NOTIFIED_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "notified.json")
+from src.database import Database
 
-def load_subscriptions():
-    try:
-        with open(SUBS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def save_notified(state):
-    with open(NOTIFIED_PATH, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
-
-def load_notified():
-    try:
-        with open(NOTIFIED_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+# Instantiate DB
+db = Database()
 
 def should_notify(label, info, notified_state, backoff_seconds=3600):
     """
@@ -60,15 +43,6 @@ def should_notify(label, info, notified_state, backoff_seconds=3600):
                                                       info.get("enrolled") < entry.get("enrolled")):
             return True
     return False
-
-def mark_notified(label, info, notified_state):
-    entry = {
-        "last_notified": datetime.now(timezone.utc).isoformat(),
-        "last_status": info.get("status_text"),
-        "enrolled": info.get("enrolled")
-    }
-    notified_state[label] = entry
-    save_notified(notified_state)
 
 def notify_users(label, user_ids, info, bot_token):
     """
@@ -101,19 +75,37 @@ def notify_users(label, user_ids, info, bot_token):
         time.sleep(0.5)  # throttle
 
 def main():
+    import argparse
+    parser_arg = argparse.ArgumentParser()
+    parser_arg.add_argument("--force", action="store_true", help="Force notification even if backoff applies")
+    parser_arg.add_argument("--no-mark", action="store_true", help="Do not update notified.json state (dry run)")
+    parser_arg.add_argument("--visible", action="store_true", help="Show browser window (disable headless)")
+    args = parser_arg.parse_args()
+
     bot_token = os.getenv("DISCORD_BOT_TOKEN")
     if not bot_token:
         print("DISCORD_BOT_TOKEN not set; abort.")
         return
 
-    subs = load_subscriptions()
-    notified = load_notified()
+    # LOAD FROM DB
+    subs = db.get_subscriptions()
+    notified = db.get_notified_state()
+    
     labels = list(subs.keys())
     for label in labels:
         try:
-            print("Checking label:", label)
-            html = fetch_results_html(label)
+            print(f"Checking label: {label}")
+            # Use headless=True unless --visible is passed
+            is_headless = not args.visible
+            html = fetch_results_html(label, headless=is_headless)
             rows = parser.parse_results_fragment(html)
+            
+            # --- DEBUG LOGGING START ---
+            print(f"DEBUG: Found {len(rows)} rows for query '{label}'")
+            for i, r in enumerate(rows):
+                 print(f"DEBUG Row {i}: label='{r.get('label')}' status='{r.get('status_text')}' raw='{r.get('raw')[:50]}...'")
+            # --- DEBUG LOGGING END ---
+
             info = None
             for r in rows:
                 if r.get("label") == label:
@@ -126,10 +118,20 @@ def main():
             # show status open/closed
             is_open = parser.is_section_open(info)
             print(f"is_section_open: {is_open}, status_text: {info.get('status_text')}, enrolled/capacity: {info.get('enrolled')}/{info.get('capacity')}")
-            if should_notify(label, info, notified):
+            
+            should = should_notify(label, info, notified)
+
+            if args.force:
+                print("Forcing notification (ignoring backoff state).")
+                should = True
+            
+            if should:
                 print("Should notify for label:", label)
                 notify_users(label, subs[label], info, bot_token)
-                mark_notified(label, info, notified)
+                if not args.no_mark:
+                    db.update_notified_state(label, info)
+                else:
+                    print("Skipping mark_notified due to --no-mark.")
             else:
                 print("Not notifying for label (backoff or no change).")
         except Exception as e:

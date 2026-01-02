@@ -21,7 +21,7 @@ RESULT_ROW_SELECTOR = "tr.cb-row"
 # import our parser module (make sure src/parser.py exists)
 from . import parser
 
-def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: int = 20000) -> str:
+def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: int = 20000) -> str:
     
     # with statement allows for broswer to run and then close in one block
     with sync_playwright() as p:

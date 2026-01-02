@@ -20,18 +20,10 @@ intents = discord.Intents.default()
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-SUBS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "subscriptions.json")
+from src.database import Database
 
-def load_subs():
-    try:
-        with open(SUBS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def save_subs(data):
-    with open(SUBS_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+# Instantiate DB
+db = Database()
 
 @bot.event
 async def on_ready():
@@ -48,40 +40,35 @@ async def on_ready():
 @bot.slash_command(name="track", description="Track a class and receive a DM when seats open")
 async def track(ctx: discord.ApplicationContext, subject: str, number: str, section: str):
     label = f"{subject.upper()} {number} {section}"
-    subs = load_subs()
     user_id = str(ctx.author.id)
-    if label not in subs:
-        subs[label] = []
-    if user_id in subs[label]:
-        await ctx.respond(f"You're already tracking {label}.", ephemeral=True)
-        return
-    subs[label].append(user_id)
-    save_subs(subs)
-    await ctx.respond(f"✅ Now tracking **{label}** for you. I will DM you when it opens.", ephemeral=True)
-    try:
-        await ctx.author.send(f"I'll notify you about **{label}**. Use /untrack {subject} {number} {section} to stop.")
-    except discord.Forbidden:
-        pass
+    
+    success = db.add_subscription(label, user_id)
+    
+    if success:
+        await ctx.respond(f"✅ Now tracking **{label}** for you. I will DM you when it opens.", ephemeral=True)
+        try:
+            await ctx.author.send(f"I'll notify you about **{label}**. Use /untrack {subject} {number} {section} to stop.")
+        except discord.Forbidden:
+            pass
+    else:
+         # Rough assumption that failure meant duplicate here (upsert handles it gracefully usually)
+         # But effectively if it returns true, we good.
+         await ctx.respond(f"You are already tracking {label} (or DB error).", ephemeral=True)
+
 
 @bot.slash_command(name="untrack", description="Stop tracking a class")
 async def untrack(ctx: discord.ApplicationContext, subject: str, number: str, section: str):
     label = f"{subject.upper()} {number} {section}"
-    subs = load_subs()
     user_id = str(ctx.author.id)
-    if label not in subs or user_id not in subs[label]:
-        await ctx.respond(f"You were not tracking {label}.", ephemeral=True)
-        return
-    subs[label].remove(user_id)
-    if not subs[label]:
-        subs.pop(label)
-    save_subs(subs)
+    
+    db.remove_subscription(label, user_id)
     await ctx.respond(f"Stopped tracking **{label}**.", ephemeral=True)
 
 @bot.slash_command(name="list", description="List classes you are tracking")
 async def list_cmd(ctx: discord.ApplicationContext):
-    subs = load_subs()
     user_id = str(ctx.author.id)
-    tracked = [lbl for lbl, users in subs.items() if user_id in users]
+    tracked = db.get_user_subscriptions(user_id)
+    
     if not tracked:
         await ctx.respond("You are not tracking any classes.", ephemeral=True)
     else:

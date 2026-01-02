@@ -54,6 +54,10 @@ def parse_row_element(tr) -> Dict:
         # fallback: any first anchor
         anchor_tag = tr.select_one("a")
     label = anchor_tag.get_text(strip=True) if anchor_tag else None
+    
+    # Normalize label: "CS 4349.006" -> "CS 4349 006"
+    if label:
+        label = label.replace(".", " ")
 
     # status span if present (site uses classes like section-open / section-closed)
     # checks for if the tr has span tags that contain the following options to 
