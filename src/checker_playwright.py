@@ -20,41 +20,62 @@ RESULT_ROW_SELECTOR = "tr.cb-row"
 # import our parser module (make sure src/parser.py exists)
 from . import parser
 
-def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: int = 20000) -> str:
+def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: int = 30000) -> str:
     
     # with statement allows for broswer to run and then close in one block
     with sync_playwright() as p:
-        # Launch with a real user agent to avoid detection/rendering issues
-        browser = p.chromium.launch(headless=headless)
-        # Create a context with user agent
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        # Launch with flags to avoid detection and improve stability in Docker
+        browser = p.chromium.launch(
+            headless=headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox", 
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ]
+        )
+        
+        # Create a context with real-user characteristics
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/Chicago"
+        )
+        
         page = context.new_page()
 
-        page.set_viewport_size({"width": 1280, "height": 800})
-
-        # debug logs from the page (lambda is basically mini function)
+        # debug logs from the page
         page.on("console", lambda msg: print("PAGE LOG:", msg.text))
-        # page.on("pageerror", lambda err: print("PAGE ERROR:", err)) # Reduce noise
 
         try:
             page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
+            page.wait_for_load_state("domcontentloaded")
             
-            # Wait for search box
+            # Wait for search box with safety buffer
             page.wait_for_selector(SEARCH_SELECTOR, state="visible", timeout=10000)
             
-            # Click and type
+            # Interact to mimic human speed slightly
             page.click(SEARCH_SELECTOR)
+            page.wait_for_timeout(200)
             page.keyboard.type(subject_number, delay=100)
-            
-            # Press enter (more reliable than clicking generic buttons sometimes)
+            page.wait_for_timeout(200)
             page.keyboard.press("Enter")
             
             # Wait for results
-            # The site might be slow, so we give it a moment
-            page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=timeout_ms)
-            
-            # Add a small buffer for JS to settle
-            page.wait_for_timeout(2000)
+            # We wait for the row to appear.
+            # Using 'domcontentloaded' or 'networkidle' can help if the site uses complex hydration
+            try:
+                page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=timeout_ms)
+            except PWTimeout:
+                # Retry strategy: sometimes hitting enter again helps if the first one was swallowed
+                print("Retry: Pressing Enter again...")
+                page.keyboard.press("Enter")
+                page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=10000)
+
+            # Extra buffer for table render
+            page.wait_for_timeout(1000)
 
             html = page.content()
             browser.close()
