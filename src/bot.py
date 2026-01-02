@@ -142,5 +142,28 @@ async def list_cmd(ctx: discord.ApplicationContext):
         formatted = "\n".join(tracked)
         await ctx.respond(f"You're tracking these classes:\n{formatted}", ephemeral=True)
 
+
+# --- RENDER KEEPALIVE SERVER ---
+# Render expects a web service to bind to the PORT env var.
+# We run a simple HTTP server in a separate thread to say "I'm alive".
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    print(f"Starting keep-alive server on port {port}")
+    server.serve_forever()
+
 if __name__ == "__main__":
+    # Start the HTTP server in a background thread
+    t = threading.Thread(target=start_health_server, daemon=True)
+    t.start()
+    
     bot.run(TOKEN)
