@@ -53,11 +53,15 @@ async def check_availability_loop():
 
         for label in labels:
             try:
-                # Note: This is a blocking call (Playwright sync). In a high-scale async bot 
-                # you'd want to run this in an executor, but for <100 classes 
-                # and 15 min interval, it's acceptable for the MVP.
+                # Fix: Run Playwright sync code in a separate thread to avoid blocking asyncio loop
+                # and to satisfy Playwright's safety checks.
                 print(f"Checking label: {label}")
-                html = fetch_results_html(label, headless=True)
+                
+                # Create a wrapper to call the sync function with arguments
+                def run_check():
+                    return fetch_results_html(label, headless=True)
+                
+                html = await bot.loop.run_in_executor(None, run_check)
                 rows = parser.parse_results_fragment(html)
                 
                 info = None
@@ -150,6 +154,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
