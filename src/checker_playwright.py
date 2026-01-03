@@ -45,6 +45,7 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
         )
         
         # KEY FIX: Inject stealth scripts to hide "Headless" status which causes the 'js_options' error
+        # AND override Client Hints (uafvl) to prevent "HeadlessChrome" from appearing in analytics/captcha checks.
         context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
@@ -58,6 +59,18 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             });
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en']
+            });
+            // Mock Client Hints to pretend to be a regular Google Chrome on Windows
+            Object.defineProperty(navigator, 'userAgentData', {
+                get: () => ({
+                    brands: [
+                        { brand: "Not_A Brand", version: "8" },
+                        { brand: "Chromium", version: "120" },
+                        { brand: "Google Chrome", version: "120" }
+                    ],
+                    mobile: false,
+                    platform: "Windows"
+                })
             });
         """)
         
