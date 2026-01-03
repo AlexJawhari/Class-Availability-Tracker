@@ -159,9 +159,21 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        self.send_response(200)
+        if self.path == '/robots.txt':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"User-agent: *\nDisallow: /")
+            return
+            
+        if self.path == '/healthz' or self.path == '/':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is running!")
+            return
+            
+        self.send_response(404)
         self.end_headers()
-        self.wfile.write(b"Bot is running!")
 
 def start_health_server():
     port = int(os.environ.get("PORT", 8080))

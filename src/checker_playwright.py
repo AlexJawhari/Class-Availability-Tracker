@@ -44,10 +44,30 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             timezone_id="America/Chicago"
         )
         
+        # KEY FIX: Inject stealth scripts to hide "Headless" status which causes the 'js_options' error
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.navigator.chrome = {
+                runtime: {},
+                // test
+            };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+        """)
+        
         page = context.new_page()
 
         # debug logs from the page
         page.on("console", lambda msg: print("PAGE LOG:", msg.text))
+        
+        # Capture network requests to reverse-engineer the API
+        page.on("request", lambda request: print(">> REQUEST:", request.method, request.url))
 
         try:
             page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
