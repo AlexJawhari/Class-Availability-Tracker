@@ -200,12 +200,14 @@ if __name__ == "__main__":
     t.start()
     
     # Run diagnostics on startup to debug Render environment
-    try:
-        from src import diagnose_docker
-        print(">>> RUNNING STARTUP DIAGNOSTICS <<<")
-        diagnose_docker.main()
-        print(">>> DIAGNOSTICS COMPLETE <<<")
-    except Exception as e:
-        print(f"Diagnostics failed to run: {e}")
+    # try:
+    #     from src import diagnose_docker
+    #     print(">>> RUNNING STARTUP DIAGNOSTICS <<<")
+    #     diagnose_docker.main()
+    #     print(">>> DIAGNOSTICS COMPLETE <<<")
+    # except Exception as e:
+    #     print(f"Diagnostics failed to run: {e}")
+    
+    print("Skipping start-up diagnostics to save RAM.")
 
     bot.run(TOKEN)

@@ -53,6 +53,8 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     # Tries to save memory by sharing process (can be unstable but useful for tight ram)
     # options.add_argument("--single-process") # Often causes more crashes in modern Chrome, kept commented.
     # options.add_argument("--no-zygote") # Similar to single-process, can cause instability.
+    options.add_argument("--blink-settings=imagesEnabled=false") # Disable images to save RAM and bandwidth
+    options.page_load_strategy = 'eager' # Don't wait for full page load (stylesheets/images)
 
     
     # If explicit headless requested AND we are not relying on Xvfb for 'headful',
@@ -71,12 +73,14 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     
     try:
         driver = uc.Chrome(options=options, headless=False, use_subprocess=True)
+        driver.set_page_load_timeout(20) # Fail fast if page hangs
+        driver.set_script_timeout(20)
     except Exception as e:
         print(f"Failed to start driver: {e}")
         return ""
 
     try:
-        driver.set_page_load_timeout(60)
+        # driver.set_page_load_timeout(60) # Moved to init
         
         print(f"Navigating to coursebook...")
         driver.get("https://coursebook.utdallas.edu/search")
