@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
 
 # Run with xvfb-run for headful browser support (if not using Browserless.io)
-# xvfb-run creates a virtual display for the browser
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "python", "-m", "src.bot"]
+# Added -u to python to force unbuffered output immediately
+CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "python", "-u", "-m", "src.bot"]
