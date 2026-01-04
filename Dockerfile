@@ -13,11 +13,15 @@ WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install xvfb for headful browser support
+RUN apt-get update && apt-get install -y xvfb && rm -rf /var/lib/apt/lists/*
+
 # Install browsers (Playwright image has deps, but we ensure the specific browser is there)
 RUN playwright install chromium
 
 # Copy the rest of the application
 COPY . /app
 
-# Run the bot
-CMD ["python", "-m", "src.bot"]
+# Run the bot with Xvfb (Virtual Framebuffer) to support headful mode
+# This tricks anti-bot systems into thinking it's a real desktop
+CMD ["xvfb-run", "--auto-servernum", "--server-args='-screen 0 1920x1080x24'", "python", "-m", "src.bot"]

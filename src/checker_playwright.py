@@ -1,29 +1,16 @@
-# src/checker_playwright.py
-"""
-Playwright-based checker that uses src.parser for parsing logic.
-
-Usage:
-  python src/checker_playwright.py CS 4349 003
-"""
 
 import sys
 import re
+import time
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from . import parser
-
 
 # --- Edit only if selector changes ---
 SEARCH_SELECTOR = "#srch"
 RESULT_ROW_SELECTOR = "tr.cb-row"
 # ------------------------------------
 
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-
-# import our parser module (make sure src/parser.py exists)
-from . import parser
-
-def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: int = 30000) -> str:
-    
+def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: int = 30000) -> str:
     # with statement allows for broswer to run and then close in one block
     with sync_playwright() as p:
         # Launch with flags to avoid detection and improve stability in Docker
@@ -38,65 +25,39 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             ]
         )
         
+
         # Create a context with real-user characteristics
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            # viewport={"width": 1920, "height": 1080}, # viewport is set by args or default, but context arg is good
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/Chicago"
-        )
+        # Try to load session state if available
+        # We look for the file relative to the script or CWD
+        import os
+        storage_state_path = "src/session_state.json"
         
-        # KEY FIX: Manual Stealth Injection
-        # We manually inject these to avoid "ImportError" from external packages and to ensure full control.
-        # This hides "Headless" status and mocks Client Hints (uafvl) to bypass CAPTCHA.
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            window.navigator.chrome = {
-                runtime: {},
-                // test
-            };
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-            
-            // Mock Client Hints to pretend to be a regular Google Chrome on Windows
-            // This is CRITICAL for bypassing the specific UTD CAPTCHA.
-            Object.defineProperty(navigator, 'userAgentData', {
-                get: () => ({
-                    brands: [
-                        { brand: "Not_A Brand", version: "8" },
-                        { brand: "Chromium", version: "120" },
-                        { brand: "Google Chrome", version: "120" }
-                    ],
-                    mobile: false,
-                    platform: "Windows"
-                })
-            });
-            
-            // 6. Permissions (Pass as 'prompt' to avoid 'denied' which reveals bots)
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                Promise.resolve({ state: 'prompt' }) :
-                originalQuery(parameters)
-            );
-            
-            // 7. WebGL (Mock Intel/NVIDIA)
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                // 37445: UNMASKED_VENDOR_WEBGL
-                // 37446: UNMASKED_RENDERER_WEBGL
-                if (parameter === 37445) { return 'Intel Inc.'; }
-                if (parameter === 37446) { return 'Intel(R) Iris(R) Xe Graphics'; }
-                return getParameter(parameter);
-            };
-        """)
+        # If running as module from root, src/session_state.json is correct if CWD is root.
+        # Check if file exists to avoid error spam
+        if os.path.exists(storage_state_path):
+             pass
+        else:
+             # Fallback to absolute path or just let it fail gracefully
+             pass
+
+        try:
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/Chicago",
+                storage_state=storage_state_path
+            )
+            print(f"Loaded session state from {storage_state_path}")
+        except Exception:
+            print(f"Could not load session state from {storage_state_path}, starting fresh.")
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/Chicago"
+            )
+
         
         page = context.new_page()
 
@@ -105,28 +66,29 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             page.wait_for_load_state("domcontentloaded")
             
             # Wait for search box with safety buffer
+            # Random initial delay
+            time.sleep(2)
+
             page.wait_for_selector(SEARCH_SELECTOR, state="visible", timeout=10000)
             
-            # Interact to mimic human speed slightly
+            # Interact 
             page.click(SEARCH_SELECTOR)
-            page.wait_for_timeout(500)
+            time.sleep(0.5)
             page.keyboard.type(subject_number, delay=100)
-            page.wait_for_timeout(500)
+            time.sleep(0.5)
             page.keyboard.press("Enter")
             
             # Wait for results
-            # We wait for the row to appear.
-            # Using 'domcontentloaded' or 'networkidle' can help if the site uses complex hydration
             try:
                 page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=timeout_ms)
             except PWTimeout:
-                # Retry strategy: sometimes hitting enter again helps if the first one was swallowed
+                # Retry strategy
                 print("Retry 1: Pressing Enter again...")
                 page.keyboard.press("Enter")
                 page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=15000)
 
             # Extra buffer for table render
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
             html = page.content()
             # Capture success screenshot too
@@ -140,9 +102,6 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
                 # Save screenshot to a file that bot.py can serve
                 page.screenshot(path="debug_last_run.png")
                 print("Saved failure screenshot to debug_last_run.png")
-                # Also log message from page content if useful
-                if "Access Denied" in page.content():
-                    print("Detected 'Access Denied' on page.")
             except:
                 pass
             browser.close()
@@ -189,10 +148,6 @@ def main(argv):
     print("\nMATCH:", match)
     open_bool = parser.is_section_open(match)
     print("Open status:", open_bool)
-    
-    # Note: Notification logic is handled by runner.py / bot.py now.
-    # This script is primarily for testing the scraper logic.
-
 
 
 if __name__ == "__main__":
