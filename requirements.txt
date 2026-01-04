@@ -5,3 +5,4 @@ supabase
 playwright
 beautifulsoup4
 lxml
+playwright-stealth

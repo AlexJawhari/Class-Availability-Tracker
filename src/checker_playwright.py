@@ -17,6 +17,9 @@ SEARCH_SELECTOR = "#srch"
 RESULT_ROW_SELECTOR = "tr.cb-row"
 # ------------------------------------
 
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright_stealth import stealth_sync
+
 # import our parser module (make sure src/parser.py exists)
 from . import parser
 
@@ -44,37 +47,10 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             timezone_id="America/Chicago"
         )
         
-        # KEY FIX: Inject stealth scripts to hide "Headless" status which causes the 'js_options' error
-        # AND override Client Hints (uafvl) to prevent "HeadlessChrome" from appearing in analytics/captcha checks.
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            window.navigator.chrome = {
-                runtime: {},
-                // test
-            };
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-            // Mock Client Hints to pretend to be a regular Google Chrome on Windows
-            Object.defineProperty(navigator, 'userAgentData', {
-                get: () => ({
-                    brands: [
-                        { brand: "Not_A Brand", version: "8" },
-                        { brand: "Chromium", version: "120" },
-                        { brand: "Google Chrome", version: "120" }
-                    ],
-                    mobile: false,
-                    platform: "Windows"
-                })
-            });
-        """)
-        
         page = context.new_page()
+        
+        # Apply stealth to the page
+        stealth_sync(page)
 
         # debug logs from the page
         page.on("console", lambda msg: print("PAGE LOG:", msg.text))
