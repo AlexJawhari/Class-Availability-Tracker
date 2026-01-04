@@ -161,9 +161,22 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/robots.txt':
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-context', 'text/plain')
             self.end_headers()
             self.wfile.write(b"User-agent: *\nDisallow: /")
+            return
+
+        if self.path == '/debug.png':
+            if os.path.exists("debug_last_run.png"):
+                self.send_response(200)
+                self.send_header('Content-context', 'image/png')
+                self.end_headers()
+                with open("debug_last_run.png", "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"No debug image found.")
             return
             
         if self.path == '/healthz' or self.path == '/':

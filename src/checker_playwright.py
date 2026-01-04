@@ -78,15 +78,27 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
                     platform: "Windows"
                 })
             });
+            
+            // 6. Permissions (Pass as 'prompt' to avoid 'denied' which reveals bots)
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                Promise.resolve({ state: 'prompt' }) :
+                originalQuery(parameters)
+            );
+            
+            // 7. WebGL (Mock Intel/NVIDIA)
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                // 37445: UNMASKED_VENDOR_WEBGL
+                // 37446: UNMASKED_RENDERER_WEBGL
+                if (parameter === 37445) { return 'Intel Inc.'; }
+                if (parameter === 37446) { return 'Intel(R) Iris(R) Xe Graphics'; }
+                return getParameter(parameter);
+            };
         """)
         
         page = context.new_page()
-
-        # debug logs from the page
-        page.on("console", lambda msg: print("PAGE LOG:", msg.text))
-        
-        # Capture network requests to reverse-engineer the API
-        page.on("request", lambda request: print(">> REQUEST:", request.method, request.url))
 
         try:
             page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
@@ -97,9 +109,9 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
             
             # Interact to mimic human speed slightly
             page.click(SEARCH_SELECTOR)
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(500)
             page.keyboard.type(subject_number, delay=100)
-            page.wait_for_timeout(200)
+            page.wait_for_timeout(500)
             page.keyboard.press("Enter")
             
             # Wait for results
@@ -109,21 +121,28 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
                 page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=timeout_ms)
             except PWTimeout:
                 # Retry strategy: sometimes hitting enter again helps if the first one was swallowed
-                print("Retry: Pressing Enter again...")
+                print("Retry 1: Pressing Enter again...")
                 page.keyboard.press("Enter")
-                page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=10000)
+                page.wait_for_selector(RESULT_ROW_SELECTOR, state="attached", timeout=15000)
 
             # Extra buffer for table render
             page.wait_for_timeout(1000)
 
             html = page.content()
+            # Capture success screenshot too
+            page.screenshot(path="debug_last_run.png")
             browser.close()
             return html
             
         except Exception as e:
             print(f"Scrape error for {subject_number}: {e}")
             try:
-                page.screenshot(path="debug_error.png")
+                # Save screenshot to a file that bot.py can serve
+                page.screenshot(path="debug_last_run.png")
+                print("Saved failure screenshot to debug_last_run.png")
+                # Also log message from page content if useful
+                if "Access Denied" in page.content():
+                    print("Detected 'Access Denied' on page.")
             except:
                 pass
             browser.close()
