@@ -2,9 +2,6 @@ py-cord
 python-dotenv
 requests
 supabase
-selenium
-undetected-chromedriver
-setuptools
+playwright
 beautifulsoup4
 lxml
-
