@@ -199,4 +199,13 @@ if __name__ == "__main__":
     t = threading.Thread(target=start_health_server, daemon=True)
     t.start()
     
+    # Run diagnostics on startup to debug Render environment
+    try:
+        from src import diagnose_docker
+        print(">>> RUNNING STARTUP DIAGNOSTICS <<<")
+        diagnose_docker.main()
+        print(">>> DIAGNOSTICS COMPLETE <<<")
+    except Exception as e:
+        print(f"Diagnostics failed to run: {e}")
+
     bot.run(TOKEN)
