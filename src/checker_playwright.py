@@ -18,7 +18,6 @@ RESULT_ROW_SELECTOR = "tr.cb-row"
 # ------------------------------------
 
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-from playwright_stealth import stealth_sync
 
 # import our parser module (make sure src/parser.py exists)
 from . import parser
@@ -42,15 +41,46 @@ def fetch_results_html(subject_number: str, headless: bool = True, timeout_ms: i
         # Create a context with real-user characteristics
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            # viewport={"width": 1920, "height": 1080}, # viewport is set by args or default, but context arg is good
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
             timezone_id="America/Chicago"
         )
         
-        page = context.new_page()
+        # KEY FIX: Manual Stealth Injection
+        # We manually inject these to avoid "ImportError" from external packages and to ensure full control.
+        # This hides "Headless" status and mocks Client Hints (uafvl) to bypass CAPTCHA.
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.navigator.chrome = {
+                runtime: {},
+                // test
+            };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            
+            // Mock Client Hints to pretend to be a regular Google Chrome on Windows
+            // This is CRITICAL for bypassing the specific UTD CAPTCHA.
+            Object.defineProperty(navigator, 'userAgentData', {
+                get: () => ({
+                    brands: [
+                        { brand: "Not_A Brand", version: "8" },
+                        { brand: "Chromium", version: "120" },
+                        { brand: "Google Chrome", version: "120" }
+                    ],
+                    mobile: false,
+                    platform: "Windows"
+                })
+            });
+        """)
         
-        # Apply stealth to the page
-        stealth_sync(page)
+        page = context.new_page()
 
         # debug logs from the page
         page.on("console", lambda msg: print("PAGE LOG:", msg.text))
