@@ -90,7 +90,7 @@ async def check_availability_loop():
                 
                 # Run Playwright sync code in thread
                 def run_check():
-                    return fetch_results_html(label, headless=True)
+                    return fetch_results_html(label, headless=False)
                 
                 html = await bot.loop.run_in_executor(None, run_check)
                 rows = parser.parse_results_fragment(html)
