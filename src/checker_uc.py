@@ -28,6 +28,12 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     timeout_sec = 30  # default
     
     options = uc.ChromeOptions()
+    # Critical flags for running in Docker/Render environment
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    
     # If explicit headless requested AND we are not relying on Xvfb for 'headful',
     # we can add the argument. But usually for stealth, headful in Xvfb is best.
     # The caller (bot/runner) usually passes headless=True/False. 
