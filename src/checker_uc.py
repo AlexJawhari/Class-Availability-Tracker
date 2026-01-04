@@ -33,6 +33,15 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-setuid-sandbox")
+    
+    # Use a temp profile to avoid permission issues in Docker
+    import tempfile
+    import shutil
+    user_data_dir = tempfile.mkdtemp()
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    # Force remote debugging port to ensure driver can attach
+    options.add_argument("--remote-debugging-port=9222")
     
     # If explicit headless requested AND we are not relying on Xvfb for 'headful',
     # we can add the argument. But usually for stealth, headful in Xvfb is best.
@@ -112,6 +121,11 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     finally:
         try:
             driver.quit()
+        except:
+            pass
+        try:
+            import shutil
+            shutil.rmtree(user_data_dir, ignore_errors=True)
         except:
             pass
 
