@@ -43,6 +43,18 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
     # Force remote debugging port to ensure driver can attach
     options.add_argument("--remote-debugging-port=9222")
     
+    # Memory optimization flags for low-resource containers (512MB)
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-dbus")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-default-apps")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    # Tries to save memory by sharing process (can be unstable but useful for tight ram)
+    # options.add_argument("--single-process") # Often causes more crashes in modern Chrome, kept commented.
+    # options.add_argument("--no-zygote") # Similar to single-process, can cause instability.
+
+    
     # If explicit headless requested AND we are not relying on Xvfb for 'headful',
     # we can add the argument. But usually for stealth, headful in Xvfb is best.
     # The caller (bot/runner) usually passes headless=True/False. 

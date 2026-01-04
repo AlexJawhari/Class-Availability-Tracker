@@ -114,13 +114,8 @@ def main():
             
     ver = check_chrome_version(bin_path)
     
-    # 1. Test Standard Headless (Basic Binary check)
-    if not test_standard_selenium(bin_path, headless_mode=True):
-        print("CRITICAL: Even standard headless Selenium failed. Binary or OS issue.")
-    
-    # 2. Test Standard Headful (Xvfb check)
-    if not test_standard_selenium(bin_path, headless_mode=False):
-        print("CRITICAL: Standard Headful failed. Xvfb/Display issue.")
+    # We skip standard selenium tests to conserve memory on startup, 
+    # as we suspect OOM is the culprit. We jump straight to the library we use.
     
     # 3. Test UC (Library check)
     uc_success = test_uc(bin_path)
