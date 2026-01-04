@@ -28,32 +28,37 @@ def check_chrome_version(binary_path):
         print(f"Error getting version: {e}")
         return None
 
-def test_standard_selenium(binary_path):
-    print("\n--- Testing Standard Selenium ---")
+def test_standard_selenium(binary_path, headless_mode=True):
+    mode_str = "HEADLESS" if headless_mode else "HEADFUL"
+    print(f"\n--- Testing Standard Selenium ({mode_str}) ---")
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.service import Service
         from selenium.webdriver.chrome.options import Options
+        import tempfile
         
         opts = Options()
         opts.binary_location = binary_path
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--headless=new") 
         opts.add_argument("--disable-gpu")
+        opts.add_argument("--disable-setuid-sandbox")
+        opts.add_argument("--remote-debugging-port=9222")
         
-        # We assume chromedriver is in path or we need to install it?
-        # UC manages driver, but standard selenium needs one. 
-        # In this environment, we might verify if UC's patcher can download it.
-        print("Attempting to launch standard Selenium (requires compatible chromedriver in PATH)...")
-        # Just checking if we can even initialize options logic without crashing
+        user_data = tempfile.mkdtemp()
+        opts.add_argument(f"--user-data-dir={user_data}")
+        
+        if headless_mode:
+            opts.add_argument("--headless=new")
+        
+        print(f"Launching Selenium {mode_str}...")
         driver = webdriver.Chrome(options=opts)
         driver.get("https://google.com")
-        print("Standard Selenium: SUCCESS (Page accessed)")
+        print(f"Standard Selenium ({mode_str}): SUCCESS. Title: {driver.title}")
         driver.quit()
         return True
     except Exception as e:
-        print(f"Standard Selenium Failed: {e}")
+        print(f"Standard Selenium ({mode_str}) Failed: {e}")
         # traceback.print_exc()
         return False
 
@@ -61,20 +66,32 @@ def test_uc(binary_path):
     print("\n--- Testing Undetected-Chromedriver ---")
     try:
         import undetected_chromedriver as uc
+        import tempfile
+        import shutil
+        
         options = uc.ChromeOptions()
         options.binary_location = binary_path
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-setuid-sandbox")
         
-        # Explicitly set headless=False as we rely on Xvfb
-        # But for test, maybe try both?
+        user_data = tempfile.mkdtemp()
+        options.add_argument(f"--user-data-dir={user_data}")
+        options.add_argument("--remote-debugging-port=9222")
+        
         print("Initializing UC Chrome...")
-        driver = uc.Chrome(options=options, headless=False, use_subprocess=True, version_main=None) # Auto version
+        # UC needs version_main sometimes if auto-detection fails or is mismatching
+        # But we'll try default first.
+        driver = uc.Chrome(options=options, headless=False, use_subprocess=True)
         driver.get("https://coursebook.utdallas.edu")
         print(f"UC Chrome: SUCCESS. Title: {driver.title}")
         driver.quit()
+        try:
+            shutil.rmtree(user_data)
+        except:
+            pass
         return True
     except Exception as e:
         print(f"UC Chrome Failed: {e}")
@@ -83,30 +100,35 @@ def test_uc(binary_path):
 
 def main():
     print("Diagnostics Starting...")
+    print(f"DISPLAY env var: {os.environ.get('DISPLAY', 'NOT SET')}")
+    
     bin_path = get_chrome_path()
     
     if not bin_path:
-        print("CRITICAL: Google Chrome binary NOT FOUND in common paths.")
-        # Try `which`
+        print("CRITICAL: Google Chrome binary NOT FOUND.")
         try:
             bin_path = subprocess.check_output(["which", "google-chrome"]).decode().strip()
             print(f"Found via `which`: {bin_path}")
         except:
-            print("`which google-chrome` failed.")
             sys.exit(1)
             
-    check_chrome_version(bin_path)
+    ver = check_chrome_version(bin_path)
     
-    # We skip standard selenium test if we don't know if chromedriver is present manually, 
-    # but UC handles driver download.
+    # 1. Test Standard Headless (Basic Binary check)
+    if not test_standard_selenium(bin_path, headless_mode=True):
+        print("CRITICAL: Even standard headless Selenium failed. Binary or OS issue.")
     
+    # 2. Test Standard Headful (Xvfb check)
+    if not test_standard_selenium(bin_path, headless_mode=False):
+        print("CRITICAL: Standard Headful failed. Xvfb/Display issue.")
+    
+    # 3. Test UC (Library check)
     uc_success = test_uc(bin_path)
     
     if uc_success:
         print("\nDiagnostics: UC seems working.")
     else:
-        print("\nDiagnostics: UC Failed. See logs above.")
-        sys.exit(1)
+        print("\nDiagnostics: UC Failed.")
 
 if __name__ == "__main__":
     main()

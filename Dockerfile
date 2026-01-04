@@ -44,4 +44,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run with XVFB
-CMD ["xvfb-run", "--auto-servernum", "--server-args='-screen 0 1920x1080x24'", "python", "-m", "src.bot"]
+CMD ["sh", "-c", "xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python -m src.bot"]
