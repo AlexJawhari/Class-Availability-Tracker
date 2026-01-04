@@ -35,7 +35,7 @@ from discord.ext import tasks
 # For simplicity and clean code, we'll import the core functions from runner if possible,
 # or better yet, we'll implement a clean check loop here that re-uses the components.
 from src import runner, parser
-from src.checker_playwright import fetch_results_html
+from src.checker_uc import fetch_results_html
 
 @tasks.loop(minutes=15)
 async def check_availability_loop():

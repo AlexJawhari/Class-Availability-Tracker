@@ -5,13 +5,9 @@ import json
 from datetime import datetime, timezone
 
 from src import parser
-from src.checker_playwright import fetch_results_html  # adjust import per your existing code
+from src.checker_uc import fetch_results_html
 import discord
 import time
-from . import parser
-from .checker_playwright import fetch_results_html
-
-
 from src.database import Database
 
 # Instantiate DB
