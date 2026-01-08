@@ -6,4 +6,4 @@ playwright==1.57.0
 beautifulsoup4
 lxml
 pyvirtualdisplay
-playwright-stealth
+playwright==1.57.0

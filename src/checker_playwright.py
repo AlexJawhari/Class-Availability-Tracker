@@ -12,9 +12,6 @@ Usage:
 
 import os
 import sys
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-
-from playwright_stealth import stealth_sync
 from . import parser
 
 # --- Selectors ---
@@ -56,10 +53,8 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
                 viewport={"width": 1280, "height": 800}
             )
             
-            page = context.new_page()
             
-            # Apply stealth
-            stealth_sync(page)
+            page = context.new_page()
             
             # Debug logs
             page.on("console", lambda msg: print("PAGE LOG:", msg.text))
