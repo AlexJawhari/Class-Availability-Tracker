@@ -125,25 +125,25 @@ time.sleep(1) # Give it a second to print connection status
 
 
 # --- VIRTUAL DISPLAY MANAGEMENT ---
-# Manage Xvfb here instead of Dockerfile CMD
-# Only needed if NOT using Browserless.io
-try:
-    if not os.environ.get("BROWSERLESS_TOKEN"):
-        print("XVFB: Initializing virtual display (pyvirtualdisplay)...", flush=True)
-        from pyvirtualdisplay import Display
-        # Visible=0 means Xvfb (hidden virtual display)
-        # size matches the Playwright viewport
-        display = Display(visible=0, size=(1920, 1080))
-        display.start()
-        print("XVFB: Virtual display STARTED :0", flush=True)
-        
-        # Verify DISPLAY env var
-        print(f"XVFB: DISPLAY={os.environ.get('DISPLAY')}", flush=True)
-    else:
-        print("BROWSERLESS: Token found, skipping local Xvfb start.", flush=True)
-except Exception as e:
-    print(f"XVFB: ERROR starting virtual display: {e}", flush=True)
-    print("XVFB: Continuing anyway (maybe Browserless is used or Xvfb already running?)", flush=True)
+# Not needed for curl_cffi (Lightweight Requests)
+# try:
+#     if not os.environ.get("BROWSERLESS_TOKEN"):
+#         pass 
+#         # print("XVFB: Initializing virtual display (pyvirtualdisplay)...", flush=True)
+#         # from pyvirtualdisplay import Display
+#         # # Visible=0 means Xvfb (hidden virtual display)
+#         # # size matches the Playwright viewport
+#         # display = Display(visible=0, size=(1920, 1080))
+#         # display.start()
+#         # print("XVFB: Virtual display STARTED :0", flush=True)
+#         
+#         # # Verify DISPLAY env var
+#         # print(f"XVFB: DISPLAY={os.environ.get('DISPLAY')}", flush=True)
+#     else:
+#         print("BROWSERLESS: Token found, skipping local Xvfb start.", flush=True)
+# except Exception as e:
+#     print(f"XVFB: ERROR starting virtual display: {e}", flush=True)
+#     print("XVFB: Continuing anyway (maybe Browserless is used or Xvfb already running?)", flush=True)
 
 
 # --- BOT IMPORTS ---
@@ -174,9 +174,9 @@ print("BOT: Database schema imported", flush=True)
 from src import runner, parser
 print("BOT: runner/parser imported", flush=True)
 
-print("BOT: Importing checker_playwright (Playwright + Stealth)...", flush=True)
-from src.checker_playwright import fetch_results_html
-print("BOT: checker_playwright imported", flush=True)
+print("BOT: importing checker_tls (Lightweight Scraper)...", flush=True)
+from src.checker_tls import fetch_results_html
+print("BOT: checker_tls imported", flush=True)
 
 print("BOT: Libraries imported.", flush=True)
 
