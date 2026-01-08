@@ -13,6 +13,8 @@ Usage:
 import os
 import sys
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright_stealth import stealth_sync
 from . import parser
 
 # --- Selectors ---
@@ -43,12 +45,21 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
                 ws_endpoint = f"wss://chrome.browserless.io?token={browserless_token}"
                 browser = p.chromium.connect_over_cdp(ws_endpoint)
             else:
-                # Launch local browser (headful in Xvfb for Docker, or visible locally)
+            # Launch local browser (headful in Xvfb for Docker, or visible locally)
                 print(f"Launching local browser (headless={headless})...")
-                browser = p.chromium.launch(headless=headless)
+                # Using args to disable some automation flags (though stealth handles most)
+                browser = p.chromium.launch(headless=headless, args=["--no-sandbox", "--disable-blink-features=AutomationControlled"])
             
-            page = browser.new_page()
-            page.set_viewport_size({"width": 1280, "height": 800})
+            # Create context with realistic User Agent
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800}
+            )
+            
+            page = context.new_page()
+            
+            # Apply stealth
+            stealth_sync(page)
             
             # Debug logs
             page.on("console", lambda msg: print("PAGE LOG:", msg.text))
