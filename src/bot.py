@@ -148,11 +148,20 @@ except Exception as e:
 
 # --- BOT IMPORTS ---
 print("BOT: Importing heavy libraries...", flush=True)
+
 import json
+print("BOT: json imported", flush=True)
+
 from dotenv import load_dotenv
+print("BOT: dotenv imported", flush=True)
+
 from datetime import datetime
+print("BOT: datetime imported", flush=True)
+
+print("BOT: Importing discord...", flush=True)
 import discord
 from discord.ext import commands, tasks
+print("BOT: discord imported", flush=True)
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -160,10 +169,14 @@ if not TOKEN:
     print("BOT: ERROR - DISCORD_BOT_TOKEN not set!", flush=True)
 
 from src.database import Database
-# Import checker late to prevent early playwright init?
-# Actually good to import now.
+print("BOT: Database schema imported", flush=True)
+
 from src import runner, parser
+print("BOT: runner/parser imported", flush=True)
+
+print("BOT: Importing checker_playwright (Playwright + Stealth)...", flush=True)
 from src.checker_playwright import fetch_results_html
+print("BOT: checker_playwright imported", flush=True)
 
 print("BOT: Libraries imported.", flush=True)
 

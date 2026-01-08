@@ -13,7 +13,7 @@ Usage:
 import os
 import sys
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
 from playwright_stealth import stealth_sync
 from . import parser
 
