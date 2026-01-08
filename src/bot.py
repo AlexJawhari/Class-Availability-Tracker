@@ -71,9 +71,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         # Usage: /logs?key=SECRET_KEY
         if parsed.path == '/logs':
             file_qs = parse_qs(parsed.query)
-            # Simple security: Check env var 'LOG_ACCESS_KEY' or default to a known dev key if not set
-            # For now, let's use a simple hardcoded fallback if env not set, OR just allow public read if mostly harmless logs?
-            # Better to require a key. 
             env_key = os.environ.get("LOG_ACCESS_KEY", "debugme")
             user_key = file_qs.get('key', [''])[0]
             
@@ -90,6 +87,20 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             # Dump buffer
             content = "".join(list(log_buffer))
             self.wfile.write(content.encode('utf-8'))
+            return
+
+        # DEBUG SCREENSHOT ENDPOINT
+        if parsed.path == '/debug.png':
+            try:
+                with open("debug_screenshot.png", "rb") as f:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'image/png')
+                    self.end_headers()
+                    self.wfile.write(f.read())
+            except FileNotFoundError:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"No screenshot captured yet.")
             return
 
         self.send_response(404)

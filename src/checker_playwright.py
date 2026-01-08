@@ -55,6 +55,10 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
             
             # Navigate to coursebook
             print(f"Navigating to coursebook...")
+            
+            # Trace network failures
+            page.on("requestfailed", lambda request: print(f"REQ_FAIL: {request.url} - {request.failure}", flush=True))
+            
             page.goto("https://coursebook.utdallas.edu/search", timeout=timeout_ms)
             
             # Wait for search box
