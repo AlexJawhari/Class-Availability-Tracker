@@ -1,5 +1,5 @@
 # Use official Playwright image which includes Python and all browser deps
-FROM mcr.microsoft.com/playwright/python:v1.54.0-noble
+FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1

@@ -2,7 +2,7 @@ py-cord
 python-dotenv
 requests
 supabase
-playwright
+playwright==1.57.0
 beautifulsoup4
 lxml
 pyvirtualdisplay
