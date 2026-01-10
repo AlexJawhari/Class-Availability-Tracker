@@ -56,8 +56,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         # Health Check
         if parsed.path == '/healthz' or parsed.path == '/':
             self.send_response(200)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
             self.end_headers()
-            self.wfile.write(b"Bot is alive! Xvfb managed by Python.")
+            health_msg = "Bot is alive! Scraper orchestrator ready."
+            self.wfile.write(health_msg.encode('utf-8'))
             return
 
         # Robot Check
@@ -101,6 +103,103 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 self.wfile.write(b"No screenshot captured yet.")
+            return
+
+        # TEST SCRAPE ENDPOINT (Protected)
+        # Usage: /test-scrape?query=CS 4349 001&key=SECRET_KEY
+        if parsed.path == '/test-scrape':
+            file_qs = parse_qs(parsed.query)
+            env_key = os.environ.get("LOG_ACCESS_KEY", "debugme")
+            user_key = file_qs.get('key', [''])[0]
+            
+            if user_key != env_key:
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Access Denied")
+                return
+            
+            query = file_qs.get('query', ['CS 4349'])[0]
+            
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            
+            import json
+            import traceback
+            from src.scraper import get_available_methods
+            from src import parser as parser_module
+            
+            result = {
+                "query": query,
+                "available_methods": get_available_methods(),
+                "method_used": None,
+                "success": False,
+                "html_length": 0,
+                "parsed_rows": 0,
+                "error": None
+            }
+            
+            try:
+                # Import here to avoid circular dependencies
+                from src.scraper import fetch_results_html
+                
+                html = fetch_results_html(query, headless=True, timeout_ms=30000)
+                result["html_length"] = len(html) if html else 0
+                
+                if html:
+                    if "cb-row" in html:
+                        rows = parser_module.parse_results_fragment(html)
+                        result["parsed_rows"] = len(rows)
+                        result["success"] = True
+                        result["html_preview"] = html[:500]
+                        result["sample_rows"] = [{"label": r.get("label"), "status": r.get("status_text")} for r in rows[:3]]
+                    else:
+                        result["error"] = "HTML returned but no cb-row elements found (might be CAPTCHA)"
+                        result["html_preview"] = html[:500]
+                else:
+                    result["error"] = "All scraping methods returned empty result"
+                    
+            except Exception as e:
+                result["error"] = str(e)
+                result["traceback"] = traceback.format_exc()
+            
+            self.wfile.write(json.dumps(result, indent=2).encode('utf-8'))
+            return
+
+        # STATUS ENDPOINT
+        # Usage: /status
+        if parsed.path == '/status':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            
+            import json
+            from datetime import datetime
+            
+            status = {
+                "bot_status": "online" if bot.is_ready() else "offline",
+                "database_connected": db.client is not None,
+                "check_loop_running": check_availability_loop.is_running() if 'check_availability_loop' in globals() else False,
+                "current_time": datetime.now().isoformat(),
+                "health": "ok"
+            }
+            
+            # Try to get scraper status
+            try:
+                from src.scraper import get_available_methods
+                status["available_scrapers"] = get_available_methods()
+            except:
+                status["available_scrapers"] = []
+            
+            # Try to get subscription count
+            try:
+                subs = db.get_subscriptions()
+                status["subscription_count"] = len(subs)
+                status["total_tracked_courses"] = len(subs.keys())
+            except:
+                status["subscription_count"] = "unknown"
+            
+            self.wfile.write(json.dumps(status, indent=2).encode('utf-8'))
             return
 
         self.send_response(404)
@@ -174,9 +273,9 @@ print("BOT: Database schema imported", flush=True)
 from src import runner, parser
 print("BOT: runner/parser imported", flush=True)
 
-print("BOT: importing checker_tls (Lightweight Scraper)...", flush=True)
-from src.checker_tls import fetch_results_html
-print("BOT: checker_tls imported", flush=True)
+print("BOT: importing scraper orchestrator...", flush=True)
+from src.scraper import fetch_results_html
+print("BOT: scraper orchestrator imported", flush=True)
 
 print("BOT: Libraries imported.", flush=True)
 
@@ -206,8 +305,8 @@ async def check_availability_loop():
                 
                 # Run sync scraper in executor
                 def run_check():
-                    # headless=False works with Xvfb
-                    return fetch_results_html(label, headless=False)
+                    # Use headless=True since we're using lightweight HTTP methods
+                    return fetch_results_html(label, headless=True, timeout_ms=30000)
                 
                 html = await bot.loop.run_in_executor(None, run_check)
                 rows = parser.parse_results_fragment(html)

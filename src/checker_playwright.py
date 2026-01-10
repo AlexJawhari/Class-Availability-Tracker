@@ -12,6 +12,7 @@ Usage:
 
 import os
 import sys
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from . import parser
 
 # --- Selectors ---

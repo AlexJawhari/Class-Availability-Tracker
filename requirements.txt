@@ -1,7 +1,13 @@
-py-cord
-python-dotenv
-requests
-supabase
-beautifulsoup4
-lxml
-curl_cffi
+# Core dependencies (required)
+py-cord>=2.6.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+supabase>=2.0.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+
+# Optional dependencies (fallback scrapers)
+# curl_cffi is optional - if installation fails, token extraction method still works
+# Note: curl_cffi requires Rust compiler during installation
+# If you encounter build issues, the app will work without it (only one scraping method instead of two)
+curl_cffi>=0.6.0; platform_system != "Windows" or python_version >= "3.12"

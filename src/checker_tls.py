@@ -8,50 +8,72 @@ from . import parser
 
 def fetch_results_html(query: str, headless: bool = True) -> str:
     """
-    Fetches coursebook HTML using TLS Masquerading.
+    Fetches coursebook HTML using TLS Masquerading with Session priming.
     Args:
         query: e.g. "CS 4349 001"
-        headless: Ignored, kept for compatibility.
     """
-    print(f"TLS_SCRAPE: Fetching '{query}'...", flush=True)
-    
-    # Normalize query for URL if possible, or use search endpoint
-    # Trying direct direct link structure: https://coursebook.utdallas.edu/cs4349.001term25s
-    # But term is dynamic.
-    # Safest is the search URI: https://coursebook.utdallas.edu/search/search={query}
-    # Clean up query
-    clean_q = query.strip().replace(" ", "") # CS4349001
-    
-    # If we have a section, we can try specific url, but let's try the general search path
-    # which UTD uses: /search/search=query
-    url = f"https://coursebook.utdallas.edu/search/search={clean_q}"
-    
+    # Clean up query: CS 4349 001 -> cs4349.001 (Standard UTD format)
+    parts = query.split()
+    if len(parts) >= 2:
+        # standard: CS 4349 001 -> cs4349.001
+        clean_q = f"{parts[0]}{parts[1]}"
+        if len(parts) > 2:
+             clean_q += f".{parts[2]}"
+    else:
+        clean_q = query.strip().replace(" ", "")
+        
+    print(f"TLS_SCRAPE: Fetching '{clean_q}' (Priming Session)...", flush=True)
+
     try:
-        # Impersonate Chrome 120 to bypass JA3/JA4 fingerprinting
+        # Impersonate Chrome 120
         session = requests.Session(impersonate="chrome120")
         
-        # Add basic headers just in case
+        # 1. Prime the session (Get Cookies/Tokens)
+        # Using a realistic header set
         headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://coursebook.utdallas.edu/",
-            "Upgrade-Insecure-Requests": "1"
+            "Cache-Control": "max-age=0",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        response = session.get(url, headers=headers, timeout=20)
+        # Visit Home first
+        home_resp = session.get("https://coursebook.utdallas.edu/", headers=headers, timeout=10)
+        print(f"TLS_SCRAPE: Home Status {home_resp.status_code}", flush=True)
+        
+        # 2. Perform Search
+        # Try the direct course URL first as it's cleaner: coursebook/cs4349.001
+        # If that fails (404), fallback to search search path
+        target_url = f"https://coursebook.utdallas.edu/{clean_q.lower()}"
+        
+        # Update Referer
+        headers["Referer"] = "https://coursebook.utdallas.edu/"
+        
+        print(f"TLS_SCRAPE: Visiting {target_url}...", flush=True)
+        response = session.get(target_url, headers=headers, timeout=20)
         
         print(f"TLS_SCRAPE: Status {response.status_code}, Size {len(response.text)} bytes", flush=True)
         
         if response.status_code == 200:
-            # Check if we got a captcha or block (rare with curl_cffi but possible)
-            if "recaptcha" in response.text.lower() or "please verify you are a human" in response.text.lower():
-                print("TLS_SCRAPE: Detected CAPTCHA/Block content!", flush=True)
-                return ""
-            return response.text
-        else:
-            print(f"TLS_SCRAPE: Failed request {response.status_code}", flush=True)
-            return ""
-            
+             # UTD returns 200 even for blocks sometimes, need to check content
+             text = response.text.lower()
+             if "recaptcha" in text or "verify you are a human" in text:
+                 print("TLS_SCRAPE: Detected CAPTCHA/Block content!", flush=True)
+                 return ""
+             return response.text
+             
+        # Fallback to general search if specific URL fails
+        print(f"TLS_SCRAPE: Direct link failed, trying search endpoint...", flush=True)
+        search_url = f"https://coursebook.utdallas.edu/search/search={clean_q.lower()}"
+        response = session.get(search_url, headers=headers, timeout=20)
+        
+        if response.status_code == 200:
+             return response.text
+             
+        return ""
+
     except Exception as e:
         print(f"TLS_SCRAPE: Error {e}", flush=True)
         return ""
