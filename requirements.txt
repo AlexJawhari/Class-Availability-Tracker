@@ -7,6 +7,7 @@ beautifulsoup4>=4.12.0
 lxml>=5.1.0
 playwright>=1.40.0
 playwright-stealth>=1.0.6
+# Alternative: try playwright_stealth if playwright-stealth doesn't work
 
 # Optional dependencies (fallback scrapers)
 # curl_cffi is optional - if installation fails, Playwright and token extraction methods still work

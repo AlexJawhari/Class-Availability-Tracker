@@ -317,16 +317,45 @@ def fetch_results_html_chromium(subject_number: str, headless: bool = False, tim
                 except Exception as e:
                     print(f"PLAYWRIGHT: playwright-stealth warning: {e}", flush=True)
             
-            # Navigate with realistic delays
-            print("PLAYWRIGHT: Navigating to coursebook...", flush=True)
+            # SESSION WARMING: Visit homepage first to establish legitimate session
+            print("PLAYWRIGHT: Warming session - visiting homepage first...", flush=True)
+            page.goto(
+                "https://coursebook.utdallas.edu/",
+                wait_until="domcontentloaded",
+                timeout=timeout_ms
+            )
+            
+            # Wait and simulate human behavior on homepage
+            time.sleep(random.uniform(2.0, 4.0))
+            simulate_realistic_mouse_movement(page)
+            simulate_realistic_scrolling(page)
+            
+            # Click around naturally (simulate reading the page)
+            try:
+                # Try clicking on some links/elements to simulate browsing
+                links = page.query_selector_all("a")
+                if links and len(links) > 0:
+                    # Hover over a random link
+                    random_link = random.choice(links[:min(5, len(links))])
+                    try:
+                        random_link.hover()
+                        time.sleep(random.uniform(0.3, 0.7))
+                    except:
+                        pass
+            except:
+                pass
+            
+            # Now navigate to search page (more legitimate path)
+            print("PLAYWRIGHT: Navigating to search page...", flush=True)
+            time.sleep(random.uniform(1.0, 2.0))
             page.goto(
                 "https://coursebook.utdallas.edu/search",
                 wait_until="domcontentloaded",
                 timeout=timeout_ms
             )
             
-            # Wait and simulate human behavior
-            time.sleep(random.uniform(1.5, 3.0))
+            # Wait and simulate human behavior on search page
+            time.sleep(random.uniform(2.0, 3.5))
             simulate_realistic_mouse_movement(page)
             simulate_realistic_scrolling(page)
             
@@ -434,14 +463,28 @@ def fetch_results_html_firefox(subject_number: str, headless: bool = False, time
             page = context.new_page()
             page.add_init_script(ADVANCED_STEALTH_JS)
             
-            print("PLAYWRIGHT: Navigating to coursebook with Firefox...", flush=True)
+            # SESSION WARMING: Visit homepage first
+            print("PLAYWRIGHT: Firefox - Warming session (homepage first)...", flush=True)
+            page.goto(
+                "https://coursebook.utdallas.edu/",
+                wait_until="domcontentloaded",
+                timeout=timeout_ms
+            )
+            
+            time.sleep(random.uniform(2.0, 4.0))
+            simulate_realistic_mouse_movement(page)
+            simulate_realistic_scrolling(page)
+            
+            # Navigate to search page
+            print("PLAYWRIGHT: Firefox - Navigating to search page...", flush=True)
+            time.sleep(random.uniform(1.0, 2.0))
             page.goto(
                 "https://coursebook.utdallas.edu/search",
                 wait_until="domcontentloaded",
                 timeout=timeout_ms
             )
             
-            time.sleep(random.uniform(1.5, 3.0))
+            time.sleep(random.uniform(2.0, 3.5))
             simulate_realistic_mouse_movement(page)
             
             try:
