@@ -73,7 +73,9 @@ EXPOSE 8080
 
 # Start Xvfb in background and run bot
 # Xvfb creates a virtual display for headful browser mode
-CMD Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & \
+# Remove lock file if it exists, then start Xvfb
+CMD rm -f /tmp/.X99-lock && \
+    Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & \
     export DISPLAY=:99 && \
     sleep 2 && \
     python -u -m src.bot
