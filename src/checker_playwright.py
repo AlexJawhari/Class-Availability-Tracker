@@ -19,13 +19,19 @@ import json
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from . import parser
 
-# Try to import playwright-stealth
+# Try to import playwright-stealth (try multiple import names)
+STEALTH_AVAILABLE = False
 try:
     from playwright_stealth import stealth_sync
     STEALTH_AVAILABLE = True
 except ImportError:
-    STEALTH_AVAILABLE = False
-    print("PLAYWRIGHT: playwright-stealth not available, using custom stealth", flush=True)
+    try:
+        # Try alternative import name
+        from playwright.stealth import stealth_sync
+        STEALTH_AVAILABLE = True
+    except ImportError:
+        STEALTH_AVAILABLE = False
+        print("PLAYWRIGHT: playwright-stealth not available, using custom stealth", flush=True)
 
 # --- Selectors ---
 SEARCH_SELECTOR = "#srch"
