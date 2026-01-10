@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from src import parser
-from src.checker_playwright import fetch_results_html
+from src.scraper import fetch_results_html
 import discord
 import time
 from src.database import Database
