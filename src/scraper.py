@@ -3,9 +3,9 @@
 Scraper orchestrator with intelligent fallback chain.
 
 Implements multiple scraping methods in order of preference:
-1. Token extraction method (checker_http.py) - Most reliable, lightweight
-2. curl_cffi with TLS masquerading (checker_tls.py) - Fallback if token method fails
-3. Direct URL scraping (checker_tls.py fallback) - Last resort
+1. Playwright with stealth techniques (primary - most reliable, bypasses CAPTCHA)
+2. Token extraction method (checker_http.py) - Lightweight fallback
+3. curl_cffi with TLS masquerading (checker_tls.py) - Last resort
 
 This ensures maximum reliability by trying multiple approaches if one fails.
 """
@@ -14,6 +14,13 @@ import logging
 from typing import Optional
 
 # Import scrapers
+try:
+    from .checker_playwright import fetch_results_html as fetch_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("WARNING: checker_playwright not available", flush=True)
+
 try:
     from .checker_http import fetch_results_html as fetch_http
     HTTP_AVAILABLE = True
@@ -29,13 +36,13 @@ except ImportError:
     print("WARNING: checker_tls (curl_cffi) not available", flush=True)
 
 
-def fetch_results_html(query: str, headless: bool = True, timeout_ms: int = 30000) -> str:
+def fetch_results_html(query: str, headless: bool = False, timeout_ms: int = 30000) -> str:
     """
     Fetch coursebook HTML using intelligent fallback chain.
     
     Args:
         query: Course query string (e.g. "CS 4349 001")
-        headless: Ignored for most methods (kept for API compatibility)
+        headless: For Playwright, False uses headful mode (more stealthy). Ignored for other methods.
         timeout_ms: Timeout in milliseconds
     
     Returns:
@@ -45,7 +52,27 @@ def fetch_results_html(query: str, headless: bool = True, timeout_ms: int = 3000
     """
     methods_tried = []
     
-    # Method 1: Token extraction (most reliable, lightweight)
+    # Method 1: Playwright with stealth (primary - most reliable for bypassing CAPTCHA)
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            print(f"SCRAPER: Trying Playwright stealth method for '{query}'...", flush=True)
+            html = fetch_playwright(query, headless=headless, timeout_ms=timeout_ms)
+            if html and "cb-row" in html:
+                print(f"SCRAPER: ✓ Playwright stealth method succeeded!", flush=True)
+                return html
+            elif html:
+                print(f"SCRAPER: Playwright returned HTML but no cb-row elements (might be CAPTCHA)", flush=True)
+                methods_tried.append("playwright(partial)")
+            else:
+                print(f"SCRAPER: Playwright returned empty result", flush=True)
+                methods_tried.append("playwright(empty)")
+        except Exception as e:
+            print(f"SCRAPER: Playwright method failed: {e}", flush=True)
+            methods_tried.append(f"playwright(error: {str(e)[:50]})")
+    else:
+        methods_tried.append("playwright(unavailable)")
+    
+    # Method 2: Token extraction (lightweight fallback)
     if HTTP_AVAILABLE:
         try:
             print(f"SCRAPER: Trying token extraction method for '{query}'...", flush=True)
@@ -65,7 +92,7 @@ def fetch_results_html(query: str, headless: bool = True, timeout_ms: int = 3000
     else:
         methods_tried.append("token_extraction(unavailable)")
     
-    # Method 2: curl_cffi with TLS masquerading (fallback)
+    # Method 3: curl_cffi with TLS masquerading (last resort)
     if TLS_AVAILABLE:
         try:
             print(f"SCRAPER: Trying curl_cffi TLS method for '{query}'...", flush=True)
@@ -101,6 +128,8 @@ def get_available_methods() -> list:
         List of method names that are available
     """
     methods = []
+    if PLAYWRIGHT_AVAILABLE:
+        methods.append("playwright_stealth")
     if HTTP_AVAILABLE:
         methods.append("token_extraction")
     if TLS_AVAILABLE:
@@ -116,7 +145,7 @@ if __name__ == "__main__":
     print(f"Testing scraper orchestrator for: {query}")
     print(f"Available methods: {get_available_methods()}")
     
-    html = fetch_results_html(query)
+    html = fetch_results_html(query, headless=False)
     
     if html:
         print(f"\n✓ Success! Got {len(html)} bytes of HTML")

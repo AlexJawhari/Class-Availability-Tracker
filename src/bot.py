@@ -305,8 +305,8 @@ async def check_availability_loop():
                 
                 # Run sync scraper in executor
                 def run_check():
-                    # Use headless=True since we're using lightweight HTTP methods
-                    return fetch_results_html(label, headless=True, timeout_ms=30000)
+                    # Use headless=False for Playwright stealth mode (runs headful with Xvfb in Docker)
+                    return fetch_results_html(label, headless=False, timeout_ms=30000)
                 
                 html = await bot.loop.run_in_executor(None, run_check)
                 rows = parser.parse_results_fragment(html)
