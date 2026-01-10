@@ -52,11 +52,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     supabase \
     beautifulsoup4 \
     lxml \
-    playwright
+    playwright \
+    playwright-stealth
 
-# Install Playwright browsers (Chromium only for smaller image)
-RUN playwright install chromium && \
-    playwright install-deps chromium
+# Install Playwright browsers (Chromium and Firefox for multiple options)
+RUN playwright install chromium firefox && \
+    playwright install-deps chromium firefox
 
 # Try to install curl_cffi (optional fallback scraper)
 # If it fails, continue - Playwright and token extraction methods will still work

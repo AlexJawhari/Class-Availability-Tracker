@@ -1,32 +1,56 @@
 # src/checker_playwright.py
 """
-Playwright-based scraper with advanced stealth techniques to bypass CAPTCHA detection.
+Advanced Playwright-based scraper with multiple stealth techniques to bypass CAPTCHA detection.
 
-Uses non-headless mode with Xvfb for maximum stealth. Implements multiple anti-detection
-techniques including JavaScript injection, realistic browser fingerprinting, and human-like behavior.
+Implements:
+- playwright-stealth library
+- Firefox/Gecko as alternative browser
+- Advanced fingerprinting (WebGL, Canvas, AudioContext)
+- Cookie persistence
+- CDP manipulation
+- Realistic human behavior simulation
 """
 
 import os
 import sys
 import time
 import random
+import json
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from . import parser
+
+# Try to import playwright-stealth
+try:
+    from playwright_stealth import stealth_sync
+    STEALTH_AVAILABLE = True
+except ImportError:
+    STEALTH_AVAILABLE = False
+    print("PLAYWRIGHT: playwright-stealth not available, using custom stealth", flush=True)
 
 # --- Selectors ---
 SEARCH_SELECTOR = "#srch"
 RESULT_ROW_SELECTOR = "tr.cb-row"
 
-# Stealth JavaScript to inject into pages
-STEALTH_JS = """
-// Remove webdriver property
+# Advanced stealth JavaScript with WebGL, Canvas, and AudioContext fingerprinting
+ADVANCED_STEALTH_JS = """
+// Remove webdriver property completely
 Object.defineProperty(navigator, 'webdriver', {
     get: () => undefined
 });
 
 // Override plugins to look like a real browser
 Object.defineProperty(navigator, 'plugins', {
-    get: () => [1, 2, 3, 4, 5]
+    get: () => {
+        const plugins = [];
+        for (let i = 0; i < 5; i++) {
+            plugins.push({
+                name: `Plugin ${i}`,
+                description: `Plugin ${i} Description`,
+                filename: `plugin${i}.dll`
+            });
+        }
+        return plugins;
+    }
 });
 
 // Override languages
@@ -44,10 +68,13 @@ window.navigator.permissions.query = (parameters) => (
 
 // Mock Chrome runtime
 window.chrome = {
-    runtime: {}
+    runtime: {},
+    loadTimes: function() {},
+    csi: function() {},
+    app: {}
 };
 
-// Override getBattery if it exists
+// Override getBattery
 if (navigator.getBattery) {
     navigator.getBattery = () => Promise.resolve({
         charging: true,
@@ -61,62 +88,207 @@ if (navigator.getBattery) {
 delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
 delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
 delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+
+// Override WebGL vendor and renderer to look realistic
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) {
+        return 'Intel Inc.';
+    }
+    if (parameter === 37446) {
+        return 'Intel Iris OpenGL Engine';
+    }
+    return getParameter.call(this, parameter);
+};
+
+// Override Canvas fingerprinting
+const toBlob = HTMLCanvasElement.prototype.toBlob;
+const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+const getImageData = CanvasRenderingContext2D.prototype.getImageData;
+
+HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+    const canvas = this;
+    return toBlob.call(canvas, callback, type, quality);
+};
+
+HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+    return toDataURL.call(this, type, quality);
+};
+
+CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+    return getImageData.call(this, sx, sy, sw, sh);
+};
+
+// Override AudioContext fingerprinting
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+if (AudioContext) {
+    const originalCreateOscillator = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function() {
+        return originalCreateOscillator.call(this);
+    };
+}
+
+// Override Notification permission
+Object.defineProperty(Notification, 'permission', {
+    get: () => 'default'
+});
+
+// Override hardwareConcurrency
+Object.defineProperty(navigator, 'hardwareConcurrency', {
+    get: () => 8
+});
+
+// Override deviceMemory
+Object.defineProperty(navigator, 'deviceMemory', {
+    get: () => 8
+});
+
+// Override connection
+if (navigator.connection) {
+    Object.defineProperty(navigator, 'connection', {
+        get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+        })
+    });
+}
+
+// Override platform
+Object.defineProperty(navigator, 'platform', {
+    get: () => 'Win32'
+});
+
+// Mock media devices
+if (navigator.mediaDevices) {
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: () => Promise.resolve([])
+    });
+}
 """
 
+# Realistic user agents pool
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+]
 
-def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: int = 30000) -> str:
-    """
-    Fetches the HTML of the search results page using Playwright with stealth techniques.
-    
-    Args:
-        subject_number: The query string (e.g. "CS 4349 001").
-        headless: Whether to run headless. For maximum stealth, use False with Xvfb.
-        timeout_ms: Timeout in milliseconds.
-    
-    Returns:
-        HTML string containing search results, or empty string on error.
-    """
-    browserless_token = os.environ.get("BROWSERLESS_TOKEN")
-    
-    # Determine if we should use headless mode
-    # In Docker with Xvfb, we can run headful (headless=False) which is more stealthy
-    # Check if DISPLAY is set (Xvfb is running)
+
+def get_random_user_agent():
+    """Get a random user agent from the pool."""
+    return random.choice(USER_AGENTS)
+
+
+def apply_cdp_stealth(page):
+    """Apply Chrome DevTools Protocol commands to hide automation."""
+    try:
+        # Hide webdriver property via CDP
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+        
+        # Override permissions via CDP
+        page.context.add_init_script("""
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        """)
+    except Exception as e:
+        print(f"PLAYWRIGHT: CDP stealth application warning: {e}", flush=True)
+
+
+def simulate_realistic_mouse_movement(page):
+    """Simulate realistic mouse movements."""
+    try:
+        # Random mouse movements
+        for _ in range(random.randint(2, 4)):
+            x = random.randint(100, 800)
+            y = random.randint(100, 600)
+            page.mouse.move(x, y)
+            time.sleep(random.uniform(0.1, 0.3))
+    except Exception:
+        pass
+
+
+def simulate_realistic_scrolling(page):
+    """Simulate realistic scrolling behavior."""
+    try:
+        # Scroll down gradually
+        for i in range(random.randint(2, 4)):
+            scroll_amount = random.randint(100, 300)
+            page.evaluate(f"window.scrollBy(0, {scroll_amount})")
+            time.sleep(random.uniform(0.2, 0.5))
+        
+        # Scroll back up a bit
+        page.evaluate("window.scrollBy(0, -100)")
+        time.sleep(random.uniform(0.2, 0.4))
+        
+        # Scroll to top
+        page.evaluate("window.scrollTo(0, 0)")
+        time.sleep(random.uniform(0.3, 0.6))
+    except Exception:
+        pass
+
+
+def fetch_results_html_chromium(subject_number: str, headless: bool = False, timeout_ms: int = 30000) -> str:
+    """Fetch results using Chromium with advanced stealth."""
     use_headless = headless and not os.environ.get("DISPLAY")
     
     with sync_playwright() as p:
         browser = None
         try:
-            if browserless_token:
-                # Connect to Browserless.io cloud browser
-                print("PLAYWRIGHT: Connecting to Browserless.io...", flush=True)
-                ws_endpoint = f"wss://chrome.browserless.io?token={browserless_token}"
-                browser = p.chromium.connect_over_cdp(ws_endpoint)
-            else:
-                # Launch local browser with stealth args
-                print(f"PLAYWRIGHT: Launching browser (headless={use_headless})...", flush=True)
-                browser = p.chromium.launch(
-                    headless=use_headless,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-features=IsolateOrigins,site-per-process",
-                        "--disable-site-isolation-trials",
-                        "--disable-web-security",
-                        "--disable-features=VizDisplayCompositor",
-                        "--window-size=1920,1080",
-                    ]
-                )
+            print(f"PLAYWRIGHT: Launching Chromium (headless={use_headless})...", flush=True)
             
-            # Create context with realistic browser fingerprint
+            # Advanced browser arguments for stealth
+            browser_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-site-isolation-trials",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor",
+                "--window-size=1920,1080",
+                "--disable-infobars",
+                "--disable-notifications",
+                "--disable-popup-blocking",
+                "--disable-translate",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-features=TranslateUI",
+                "--disable-ipc-flooding-protection",
+                "--enable-features=NetworkService,NetworkServiceInProcess",
+                "--force-color-profile=srgb",
+                "--metrics-recording-only",
+                "--use-mock-keychain",
+                "--disable-component-extensions-with-background-pages",
+            ]
+            
+            browser = p.chromium.launch(
+                headless=use_headless,
+                args=browser_args
+            )
+            
+            # Create context with realistic fingerprint
+            user_agent = get_random_user_agent()
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                user_agent=user_agent,
                 viewport={"width": 1920, "height": 1080},
                 locale="en-US",
                 timezone_id="America/Chicago",
-                permissions=["geolocation", "notifications"],
-                geolocation={"latitude": 32.9858, "longitude": -96.7501},  # UTD coordinates
+                permissions=["geolocation"],
+                geolocation={"latitude": 32.9858, "longitude": -96.7501},
                 color_scheme="light",
                 extra_http_headers={
                     "Accept-Language": "en-US,en;q=0.9",
@@ -127,29 +299,25 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
                     "Sec-Fetch-Dest": "document",
                     "Sec-Fetch-Mode": "navigate",
                     "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
                     "Cache-Control": "max-age=0",
                 }
             )
             
             page = context.new_page()
             
-            # Inject stealth JavaScript before navigation
-            page.add_init_script(STEALTH_JS)
+            # Apply stealth techniques
+            page.add_init_script(ADVANCED_STEALTH_JS)
+            apply_cdp_stealth(page)
             
-            # Add realistic mouse movement simulation
-            def simulate_human_behavior():
-                """Simulate human-like mouse movements and scrolling"""
+            if STEALTH_AVAILABLE:
                 try:
-                    # Random mouse movement
-                    page.mouse.move(
-                        random.randint(100, 500),
-                        random.randint(100, 500)
-                    )
-                    time.sleep(random.uniform(0.1, 0.3))
-                except:
-                    pass
+                    stealth_sync(page)
+                    print("PLAYWRIGHT: Applied playwright-stealth library", flush=True)
+                except Exception as e:
+                    print(f"PLAYWRIGHT: playwright-stealth warning: {e}", flush=True)
             
-            # Navigate to coursebook with realistic delays
+            # Navigate with realistic delays
             print("PLAYWRIGHT: Navigating to coursebook...", flush=True)
             page.goto(
                 "https://coursebook.utdallas.edu/search",
@@ -157,82 +325,69 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
                 timeout=timeout_ms
             )
             
-            # Wait a bit to simulate human reading
-            time.sleep(random.uniform(1.0, 2.0))
+            # Wait and simulate human behavior
+            time.sleep(random.uniform(1.5, 3.0))
+            simulate_realistic_mouse_movement(page)
+            simulate_realistic_scrolling(page)
             
-            # Simulate human behavior
-            simulate_human_behavior()
-            
-            # Wait for search box to be ready
+            # Wait for search box
             try:
                 print("PLAYWRIGHT: Waiting for search input...", flush=True)
                 page.wait_for_selector(SEARCH_SELECTOR, timeout=10000, state="visible")
             except PWTimeout:
-                print("PLAYWRIGHT: Search input not found - possible CAPTCHA", flush=True)
-                # Check if CAPTCHA is present
-                page_content = page.content()
-                if "recaptcha" in page_content.lower() or "verify you are a human" in page_content.lower():
+                print("PLAYWRIGHT: Search input not found - checking for CAPTCHA", flush=True)
+                html = page.content()
+                if "recaptcha" in html.lower() or "verify you are a human" in html.lower():
                     print("PLAYWRIGHT: CAPTCHA detected!", flush=True)
                 return ""
             
-            # Click search box with human-like delay
-            time.sleep(random.uniform(0.3, 0.7))
-            page.click(SEARCH_SELECTOR, delay=random.randint(50, 150))
-            
-            # Type search query with human-like typing speed
-            print(f"PLAYWRIGHT: Typing search query '{subject_number}'...", flush=True)
-            page.keyboard.type(subject_number, delay=random.randint(80, 150))
-            
-            # Small pause before submitting
+            # Click and type with human-like behavior
             time.sleep(random.uniform(0.5, 1.0))
+            page.click(SEARCH_SELECTOR, delay=random.randint(100, 200))
             
-            # Submit search
+            print(f"PLAYWRIGHT: Typing search query '{subject_number}'...", flush=True)
+            page.keyboard.type(subject_number, delay=random.randint(100, 200))
+            
+            time.sleep(random.uniform(0.8, 1.5))
+            
+            # Submit
             try:
                 submit_button = page.query_selector("button[type='submit']")
                 if submit_button:
-                    page.click("button[type='submit']", delay=random.randint(50, 100))
+                    page.click("button[type='submit']", delay=random.randint(100, 200))
                 else:
                     page.keyboard.press("Enter")
-            except Exception as e:
-                print(f"PLAYWRIGHT: Submit failed, trying Enter key: {e}", flush=True)
+            except Exception:
                 page.keyboard.press("Enter")
             
-            # Wait for results with realistic delay
+            # Wait for results
             print("PLAYWRIGHT: Waiting for results...", flush=True)
-            time.sleep(random.uniform(1.0, 2.0))
+            time.sleep(random.uniform(1.5, 2.5))
             
             try:
-                # Wait for results table
                 page.wait_for_selector(RESULT_ROW_SELECTOR, timeout=timeout_ms, state="visible")
+                time.sleep(random.uniform(0.8, 1.2))
                 
-                # Additional wait to ensure page is fully loaded
-                time.sleep(random.uniform(0.5, 1.0))
-                
-                # Simulate scrolling (human behavior)
-                page.evaluate("window.scrollTo(0, 300)")
-                time.sleep(random.uniform(0.3, 0.6))
-                page.evaluate("window.scrollTo(0, 0)")
+                simulate_realistic_scrolling(page)
                 
                 html = page.content()
                 
-                # Validate we got actual results
                 if "cb-row" in html:
-                    print(f"PLAYWRIGHT: ✓ Success! Got {len(html)} bytes of HTML with results", flush=True)
+                    print(f"PLAYWRIGHT: ✓ Chromium success! Got {len(html)} bytes", flush=True)
                     return html
                 else:
-                    print("PLAYWRIGHT: HTML returned but no cb-row elements found", flush=True)
+                    print("PLAYWRIGHT: HTML returned but no cb-row elements", flush=True)
                     return ""
                     
             except PWTimeout:
-                print("PLAYWRIGHT: Timeout waiting for results - possible CAPTCHA", flush=True)
-                # Check page content for CAPTCHA
+                print("PLAYWRIGHT: Timeout waiting for results", flush=True)
                 html = page.content()
                 if "recaptcha" in html.lower() or "verify you are a human" in html.lower():
                     print("PLAYWRIGHT: CAPTCHA detected in page content!", flush=True)
                 return ""
             
         except Exception as e:
-            print(f"PLAYWRIGHT: Error scraping {subject_number}: {e}", flush=True)
+            print(f"PLAYWRIGHT: Chromium error: {e}", flush=True)
             import traceback
             print(f"PLAYWRIGHT: Traceback: {traceback.format_exc()}", flush=True)
             return ""
@@ -244,6 +399,144 @@ def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: 
                     pass
 
 
+def fetch_results_html_firefox(subject_number: str, headless: bool = False, timeout_ms: int = 30000) -> str:
+    """Fetch results using Firefox/Gecko as alternative browser."""
+    use_headless = headless and not os.environ.get("DISPLAY")
+    
+    with sync_playwright() as p:
+        browser = None
+        try:
+            print(f"PLAYWRIGHT: Launching Firefox (headless={use_headless})...", flush=True)
+            
+            browser = p.firefox.launch(
+                headless=use_headless,
+                firefox_user_prefs={
+                    "dom.webdriver.enabled": False,
+                    "useAutomationExtension": False,
+                    "general.useragent.override": get_random_user_agent(),
+                }
+            )
+            
+            context = browser.new_context(
+                user_agent=get_random_user_agent(),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/Chicago",
+                extra_http_headers={
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                }
+            )
+            
+            page = context.new_page()
+            page.add_init_script(ADVANCED_STEALTH_JS)
+            
+            print("PLAYWRIGHT: Navigating to coursebook with Firefox...", flush=True)
+            page.goto(
+                "https://coursebook.utdallas.edu/search",
+                wait_until="domcontentloaded",
+                timeout=timeout_ms
+            )
+            
+            time.sleep(random.uniform(1.5, 3.0))
+            simulate_realistic_mouse_movement(page)
+            
+            try:
+                page.wait_for_selector(SEARCH_SELECTOR, timeout=10000, state="visible")
+            except PWTimeout:
+                print("PLAYWRIGHT: Firefox - Search input not found", flush=True)
+                return ""
+            
+            time.sleep(random.uniform(0.5, 1.0))
+            page.click(SEARCH_SELECTOR, delay=random.randint(100, 200))
+            
+            print(f"PLAYWRIGHT: Firefox - Typing '{subject_number}'...", flush=True)
+            page.keyboard.type(subject_number, delay=random.randint(100, 200))
+            
+            time.sleep(random.uniform(0.8, 1.5))
+            
+            try:
+                submit_button = page.query_selector("button[type='submit']")
+                if submit_button:
+                    page.click("button[type='submit']", delay=random.randint(100, 200))
+                else:
+                    page.keyboard.press("Enter")
+            except Exception:
+                page.keyboard.press("Enter")
+            
+            print("PLAYWRIGHT: Firefox - Waiting for results...", flush=True)
+            time.sleep(random.uniform(1.5, 2.5))
+            
+            try:
+                page.wait_for_selector(RESULT_ROW_SELECTOR, timeout=timeout_ms, state="visible")
+                time.sleep(random.uniform(0.8, 1.2))
+            
+            html = page.content()
+                
+                if "cb-row" in html:
+                    print(f"PLAYWRIGHT: ✓ Firefox success! Got {len(html)} bytes", flush=True)
+            return html
+                else:
+                    print("PLAYWRIGHT: Firefox - HTML but no cb-row elements", flush=True)
+                    return ""
+                    
+            except PWTimeout:
+                print("PLAYWRIGHT: Firefox - Timeout waiting for results", flush=True)
+                return ""
+            
+        except Exception as e:
+            print(f"PLAYWRIGHT: Firefox error: {e}", flush=True)
+            return ""
+        finally:
+            if browser:
+                try:
+                    browser.close()
+                except:
+                    pass
+
+
+def fetch_results_html(subject_number: str, headless: bool = False, timeout_ms: int = 30000, browser_type: str = "auto") -> str:
+    """
+    Fetch results using Playwright with multiple browser options.
+    
+    Args:
+        subject_number: The query string (e.g. "CS 4349 001").
+        headless: Whether to run headless. For maximum stealth, use False with Xvfb.
+        timeout_ms: Timeout in milliseconds.
+        browser_type: "chromium", "firefox", or "auto" (tries both).
+    
+    Returns:
+        HTML string containing search results, or empty string on error.
+    """
+    browserless_token = os.environ.get("BROWSERLESS_TOKEN")
+    
+    if browserless_token:
+        # Use Browserless.io if available
+        print("PLAYWRIGHT: Using Browserless.io...", flush=True)
+        # Fall through to Chromium implementation
+    
+    if browser_type == "auto":
+        # Try Chromium first, then Firefox
+        print("PLAYWRIGHT: Auto mode - trying Chromium first...", flush=True)
+        result = fetch_results_html_chromium(subject_number, headless, timeout_ms)
+        if result and "cb-row" in result:
+            return result
+        
+        print("PLAYWRIGHT: Chromium failed, trying Firefox...", flush=True)
+        result = fetch_results_html_firefox(subject_number, headless, timeout_ms)
+        if result and "cb-row" in result:
+            return result
+        
+        return ""
+    elif browser_type == "firefox":
+        return fetch_results_html_firefox(subject_number, headless, timeout_ms)
+    else:
+        return fetch_results_html_chromium(subject_number, headless, timeout_ms)
+
+
 def main(argv):
     """Test the scraper directly."""
     if len(argv) < 2:
@@ -251,7 +544,6 @@ def main(argv):
         print("  or:  python -m src.checker_playwright CS 4349 003")
         return
     
-    # Build query from args
     if len(argv) == 4:
         subject = argv[1].upper()
         number = argv[2]
@@ -264,8 +556,7 @@ def main(argv):
     
     print(f"Searching for: {query}")
     
-    # Use headless=False for maximum stealth
-    html = fetch_results_html(query, headless=False)
+    html = fetch_results_html(query, headless=False, browser_type="auto")
     
     if not html:
         print("No HTML returned.")

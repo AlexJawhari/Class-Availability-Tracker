@@ -53,22 +53,41 @@ def fetch_results_html(query: str, headless: bool = False, timeout_ms: int = 300
     methods_tried = []
     
     # Method 1: Playwright with stealth (primary - most reliable for bypassing CAPTCHA)
+    # Try Chromium first, then Firefox if Chromium fails
     if PLAYWRIGHT_AVAILABLE:
+        # Try Chromium
         try:
-            print(f"SCRAPER: Trying Playwright stealth method for '{query}'...", flush=True)
-            html = fetch_playwright(query, headless=headless, timeout_ms=timeout_ms)
+            print(f"SCRAPER: Trying Playwright Chromium stealth for '{query}'...", flush=True)
+            html = fetch_playwright(query, headless=headless, timeout_ms=timeout_ms, browser_type="chromium")
             if html and "cb-row" in html:
-                print(f"SCRAPER: ✓ Playwright stealth method succeeded!", flush=True)
+                print(f"SCRAPER: ✓ Playwright Chromium succeeded!", flush=True)
                 return html
             elif html:
-                print(f"SCRAPER: Playwright returned HTML but no cb-row elements (might be CAPTCHA)", flush=True)
-                methods_tried.append("playwright(partial)")
+                print(f"SCRAPER: Playwright Chromium returned HTML but no cb-row elements", flush=True)
+                methods_tried.append("playwright_chromium(partial)")
             else:
-                print(f"SCRAPER: Playwright returned empty result", flush=True)
-                methods_tried.append("playwright(empty)")
+                print(f"SCRAPER: Playwright Chromium returned empty result", flush=True)
+                methods_tried.append("playwright_chromium(empty)")
         except Exception as e:
-            print(f"SCRAPER: Playwright method failed: {e}", flush=True)
-            methods_tried.append(f"playwright(error: {str(e)[:50]})")
+            print(f"SCRAPER: Playwright Chromium failed: {e}", flush=True)
+            methods_tried.append(f"playwright_chromium(error: {str(e)[:50]})")
+        
+        # Try Firefox if Chromium failed
+        try:
+            print(f"SCRAPER: Trying Playwright Firefox stealth for '{query}'...", flush=True)
+            html = fetch_playwright(query, headless=headless, timeout_ms=timeout_ms, browser_type="firefox")
+            if html and "cb-row" in html:
+                print(f"SCRAPER: ✓ Playwright Firefox succeeded!", flush=True)
+                return html
+            elif html:
+                print(f"SCRAPER: Playwright Firefox returned HTML but no cb-row elements", flush=True)
+                methods_tried.append("playwright_firefox(partial)")
+            else:
+                print(f"SCRAPER: Playwright Firefox returned empty result", flush=True)
+                methods_tried.append("playwright_firefox(empty)")
+        except Exception as e:
+            print(f"SCRAPER: Playwright Firefox failed: {e}", flush=True)
+            methods_tried.append(f"playwright_firefox(error: {str(e)[:50]})")
     else:
         methods_tried.append("playwright(unavailable)")
     
@@ -129,7 +148,8 @@ def get_available_methods() -> list:
     """
     methods = []
     if PLAYWRIGHT_AVAILABLE:
-        methods.append("playwright_stealth")
+        methods.append("playwright_chromium_stealth")
+        methods.append("playwright_firefox_stealth")
     if HTTP_AVAILABLE:
         methods.append("token_extraction")
     if TLS_AVAILABLE:
