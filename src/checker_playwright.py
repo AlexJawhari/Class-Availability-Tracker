@@ -628,12 +628,12 @@ def fetch_results_html_firefox(subject_number: str, headless: bool = False, time
             try:
                 page.wait_for_selector(RESULT_ROW_SELECTOR, timeout=timeout_ms, state="visible")
                 time.sleep(random.uniform(0.8, 1.2))
-            
-            html = page.content()
+                
+                html = page.content()
                 
                 if "cb-row" in html:
                     print(f"PLAYWRIGHT: ✓ Firefox success! Got {len(html)} bytes", flush=True)
-            return html
+                    return html
                 else:
                     print("PLAYWRIGHT: Firefox - HTML but no cb-row elements", flush=True)
                     return ""
