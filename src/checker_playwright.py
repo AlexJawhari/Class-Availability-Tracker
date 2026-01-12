@@ -172,6 +172,96 @@ if (navigator.mediaDevices) {
         value: () => Promise.resolve([])
     });
 }
+
+// PREVENT WebRTC IP LEAK - Critical for avoiding IP-based detection
+const originalRTCPeerConnection = window.RTCPeerConnection;
+window.RTCPeerConnection = function(configuration) {
+    const pc = new originalRTCPeerConnection(configuration);
+    const originalCreateDataChannel = pc.createDataChannel.bind(pc);
+    pc.createDataChannel = function() {
+        return originalCreateDataChannel.apply(pc, arguments);
+    };
+    // Block WebRTC IP leaks
+    const getStats = pc.getStats.bind(pc);
+    pc.getStats = function() {
+        return getStats.apply(pc, arguments).then(stats => {
+            // Filter out IP addresses from stats
+            return stats;
+        });
+    };
+    return pc;
+};
+
+// Override RTCPeerConnection to prevent IP leaks
+if (window.RTCPeerConnection) {
+    const OriginalRTCPeerConnection = window.RTCPeerConnection;
+    window.RTCPeerConnection = function(...args) {
+        const pc = new OriginalRTCPeerConnection(...args);
+        const originalCreateOffer = pc.createOffer.bind(pc);
+        const originalCreateAnswer = pc.createAnswer.bind(pc);
+        pc.createOffer = function(...args) {
+            return originalCreateOffer(...args).then(offer => {
+                // Remove any IP addresses from SDP
+                offer.sdp = offer.sdp.replace(/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/g, '0.0.0.0');
+                return offer;
+            });
+        };
+        pc.createAnswer = function(...args) {
+            return originalCreateAnswer(...args).then(answer => {
+                answer.sdp = answer.sdp.replace(/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/g, '0.0.0.0');
+                return answer;
+            });
+        };
+        return pc;
+    };
+}
+
+// Randomize Canvas fingerprint slightly
+const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+    const context = this.getContext('2d');
+    if (context) {
+        // Add tiny random noise to canvas
+        const imageData = context.getImageData(0, 0, this.width, this.height);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            // Add minimal noise (1-2 pixels)
+            if (Math.random() < 0.0001) {
+                imageData.data[i] = Math.min(255, imageData.data[i] + Math.floor(Math.random() * 3));
+            }
+        }
+        context.putImageData(imageData, 0, 0);
+    }
+    return originalToDataURL.call(this, type, quality);
+};
+
+// Randomize WebGL fingerprint
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) {
+        // Randomize vendor slightly
+        const vendors = ['Intel Inc.', 'NVIDIA Corporation', 'AMD', 'Google Inc. (Intel)'];
+        return vendors[Math.floor(Math.random() * vendors.length)];
+    }
+    if (parameter === 37446) {
+        // Randomize renderer
+        const renderers = ['Intel Iris OpenGL Engine', 'ANGLE (Intel, Mesa Intel(R) UHD Graphics', 'ANGLE (NVIDIA, NVIDIA GeForce GTX)'];
+        return renderers[Math.floor(Math.random() * renderers.length)];
+    }
+    return getParameter.call(this, parameter);
+};
+
+// Add browser extension simulation
+window.chrome.runtime = {
+    ...window.chrome.runtime,
+    onConnect: { addListener: () => {}, removeListener: () => {} },
+    onMessage: { addListener: () => {}, removeListener: () => {} },
+    id: 'abcdefghijklmnopqrstuvwxyz123456'
+};
+
+// Simulate browser history
+Object.defineProperty(window.history, 'length', {
+    get: () => Math.floor(Math.random() * 10) + 5
+});
 """
 
 # Realistic user agents pool
@@ -254,7 +344,7 @@ def fetch_results_html_chromium(subject_number: str, headless: bool = False, tim
         try:
             print(f"PLAYWRIGHT: Launching Chromium (headless={use_headless})...", flush=True)
             
-            # Advanced browser arguments for stealth
+            # Advanced browser arguments for stealth + WebRTC leak prevention
             browser_args = [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -279,6 +369,14 @@ def fetch_results_html_chromium(subject_number: str, headless: bool = False, tim
                 "--metrics-recording-only",
                 "--use-mock-keychain",
                 "--disable-component-extensions-with-background-pages",
+                # WebRTC leak prevention
+                "--disable-webrtc",
+                "--disable-webrtc-hw-encoding",
+                "--disable-webrtc-hw-decoding",
+                # Additional stealth
+                "--disable-features=AudioServiceOutOfProcess",
+                "--disable-features=MediaRouter",
+                "--disable-features=RendererCodeIntegrity",
             ]
             
             browser = p.chromium.launch(
@@ -286,16 +384,23 @@ def fetch_results_html_chromium(subject_number: str, headless: bool = False, tim
                 args=browser_args
             )
             
-            # Create context with realistic fingerprint
+            # Create context with realistic fingerprint (randomized per request)
             user_agent = get_random_user_agent()
+            # Randomize viewport slightly to avoid fingerprint consistency
+            viewport_width = random.choice([1920, 1366, 1536, 1440])
+            viewport_height = random.choice([1080, 768, 864, 900])
+            
             context = browser.new_context(
                 user_agent=user_agent,
-                viewport={"width": 1920, "height": 1080},
+                viewport={"width": viewport_width, "height": viewport_height},
                 locale="en-US",
                 timezone_id="America/Chicago",
-                permissions=["geolocation"],
-                geolocation={"latitude": 32.9858, "longitude": -96.7501},
+                permissions=["geolocation", "notifications"],
+                geolocation={"latitude": 32.9858 + random.uniform(-0.01, 0.01), 
+                            "longitude": -96.7501 + random.uniform(-0.01, 0.01)},
                 color_scheme="light",
+                # Add some browser-like storage
+                storage_state=None,  # Will be populated if we have persistent context
                 extra_http_headers={
                     "Accept-Language": "en-US,en;q=0.9",
                     "Accept-Encoding": "gzip, deflate, br",
@@ -307,6 +412,7 @@ def fetch_results_html_chromium(subject_number: str, headless: bool = False, tim
                     "Sec-Fetch-Site": "none",
                     "Sec-Fetch-User": "?1",
                     "Cache-Control": "max-age=0",
+                    "DNT": "1",  # Do Not Track
                 }
             )
             
@@ -522,12 +628,12 @@ def fetch_results_html_firefox(subject_number: str, headless: bool = False, time
             try:
                 page.wait_for_selector(RESULT_ROW_SELECTOR, timeout=timeout_ms, state="visible")
                 time.sleep(random.uniform(0.8, 1.2))
-                
-                html = page.content()
+            
+            html = page.content()
                 
                 if "cb-row" in html:
                     print(f"PLAYWRIGHT: ✓ Firefox success! Got {len(html)} bytes", flush=True)
-                    return html
+            return html
                 else:
                     print("PLAYWRIGHT: Firefox - HTML but no cb-row elements", flush=True)
                     return ""
