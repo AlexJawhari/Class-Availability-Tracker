@@ -142,5 +142,3 @@ The bot is containerized and designed for free-tier hosting on Render or Railway
 MIT
 
 ---
-
-Built by [Alex Jawhari](https://github.com/AlexJawhari) - UTD CS '27
