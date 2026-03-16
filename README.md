@@ -16,6 +16,9 @@ This bot helps students track course availability by automatically checking the 
 
 ## Usage
 
+### Installation
+You can add the bot onto a server or into your personal DM's with this link: https://discord.com/oauth2/authorize?client_id=1426453681146171464
+
 ### Commands
 
 - `/track <course>` - Start tracking a course section (e.g., `/track CS 4349 006`)
